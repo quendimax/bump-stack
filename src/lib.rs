@@ -77,29 +77,42 @@ impl ChunkFooter {
 }
 
 impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
-    /// ELEMENT_ALIGN takes into account the MIN_ALIGN. It takes the maximum
-    /// between MIN_ALIGN and `ELEMENT_LAYOUT.align()`.
-    const ELEMENT_ALIGN: usize = util::max(Layout::new::<T>().align(), MIN_ALIGN);
+    /// Element alignment takes into account the `MIN_ALIGN`. It takes the maximum
+    /// between `MIN_ALIGN` and `T`'s alignment.
+    const ELEMENT_ALIGN: usize = {
+        assert!(MIN_ALIGN.is_power_of_two());
+        util::max(Layout::new::<T>().align(), MIN_ALIGN)
+    };
 
-    /// The same as `ELEMENT_LAYOUT.size()`.
+    /// `ELEMENT_SIZE` is not always equal to `T`'s size. This is actually the
+    /// size of memory space required to store an `T` element with required
+    /// alignment.
     const ELEMENT_SIZE: usize = Layout::new::<T>()
         .size()
         .checked_next_multiple_of(Self::ELEMENT_ALIGN)
         .unwrap();
 
-    const FOOTER_ALIGN: usize = Layout::new::<ChunkFooter>().align();
+    /// It is expected that the footer alignment is equal or greater than the
+    /// element alignment, because the footer address is expected to be a marker
+    /// of the `(last + 1)`-th element.
+    const FOOTER_ALIGN: usize =
+        util::max(Layout::new::<ChunkFooter>().align(), Self::ELEMENT_ALIGN);
 
     const FOOTER_SIZE: usize = Layout::new::<ChunkFooter>().size();
 
-    const CHUNK_ALIGN: usize = util::max(Self::ELEMENT_ALIGN, Self::FOOTER_ALIGN);
+    /// Chunk alignment is the same as element alignment.
+    const CHUNK_ALIGN: usize = Self::ELEMENT_ALIGN;
 
     /// Chunk size enough for at least one element.
     const CHUNK_MIN_SIZE: usize = Self::chunk_size_for(1);
 
-    /// Chunk size for the first chunk if capacity is not specified.
+    /// Chunk size for the first chunk if capacity is not specified with
+    /// [`Stack::with_capacity`].
     const CHUNK_FIRST_SIZE: usize = Self::chunk_size_for(8);
 
-    const CHUNK_MAX_SIZE: usize = (isize::MAX as usize / 2).next_power_of_two();
+    /// Maximal possible chunk size. It is equal `isize::MAX` value rounded down
+    /// to the nearest power of two.
+    const CHUNK_MAX_SIZE: usize = util::round_down_to_pow2(isize::MAX as usize);
 
     /// Calculate chunk size big enough for the given number of elements. The
     /// chunk is a power of two.
@@ -250,3 +263,5 @@ impl<T> core::default::Default for Stack<T> {
         Self::new()
     }
 }
+
+mod stest;
