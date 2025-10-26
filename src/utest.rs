@@ -32,3 +32,19 @@ fn stack_push() {
     assert_eq!(stack.capacity(), capacity);
     assert_eq!(stack.len(), 3);
 }
+
+#[test]
+fn stack_pop() {
+    let mut stack = Stack::<u32>::new();
+    for i in 0..8 {
+        stack.push(i);
+    }
+    assert_eq!(stack.len(), 8);
+
+    let mut j = 8;
+    while let Some(i) = stack.pop() {
+        j -= 1;
+        assert_eq!(i, j);
+    }
+    assert_eq!(j, 0);
+}

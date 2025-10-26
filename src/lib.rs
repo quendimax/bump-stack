@@ -284,7 +284,10 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
             Self::ELEMENT_ALIGN
         );
 
-        Some(unsafe { NonNull::new_unchecked(new_ptr as *mut T) })
+        let new_ptr = unsafe { NonNull::new_unchecked(new_ptr) };
+        current_footer.ptr.set(new_ptr);
+
+        Some(new_ptr.cast())
     }
 
     unsafe fn alloc_element_slow(&mut self) -> NonNull<T> {
@@ -383,10 +386,16 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
     }
 
     unsafe fn dealloc_element(&mut self) -> Option<T> {
-        self.try_dealloc_element_fast()
+        unsafe {
+            if let Some(ptr) = self.try_dealloc_element_fast() {
+                Some(ptr::read(ptr))
+            } else {
+                self.try_dealloc_element_slow().map(|ptr| ptr::read(ptr))
+            }
+        }
     }
 
-    fn try_dealloc_element_fast(&mut self) -> Option<T> {
+    unsafe fn try_dealloc_element_fast(&mut self) -> Option<*const T> {
         let current_footer_ptr = self.current_footer;
         let current_footer_ref = unsafe { current_footer_ptr.as_ref() };
 
@@ -397,8 +406,7 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
             return None;
         }
 
-        let pop_elem = unsafe { ptr::read(ptr as *const T) };
-        let new_ptr = ptr.wrapping_add(Self::ELEMENT_SIZE);
+        let new_ptr = ptr.wrapping_byte_add(Self::ELEMENT_SIZE);
 
         debug_assert!(
             ptr <= end,
@@ -410,7 +418,17 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
             Self::ELEMENT_ALIGN
         );
 
-        Some(pop_elem)
+        let new_ptr = unsafe { NonNull::new_unchecked(new_ptr as *mut u8) };
+        current_footer_ref.ptr.set(new_ptr);
+
+        Some(ptr as *const T)
+    }
+
+    unsafe fn try_dealloc_element_slow(&mut self) -> Option<*const T> {
+        if self.is_empty() {
+            return None;
+        }
+        todo!()
     }
 }
 
