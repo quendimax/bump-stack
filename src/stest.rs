@@ -36,88 +36,88 @@ struct T83 {
 const_assert_eq!(Stack::<u8, 1>::ELEMENT_ALIGN, 1);
 const_assert_eq!(Stack::<u8, 1>::ELEMENT_SIZE, 1);
 const_assert_eq!(Stack::<u8, 1>::FOOTER_ALIGN, 8);
-const_assert_eq!(Stack::<u8, 1>::FOOTER_SIZE, 40);
+const_assert_eq!(Stack::<u8, 1>::FOOTER_SIZE, 48);
 const_assert_eq!(Stack::<u8, 1>::CHUNK_ALIGN, 8);
 const_assert_eq!(Stack::<u8, 1>::CHUNK_MIN_SIZE, 64);
 const_assert_eq!(Stack::<u8, 1>::CHUNK_FIRST_SIZE, 512);
-const_assert_eq!(Stack::<u8, 1>::CHUNK_MAX_SIZE, 0x400_0000_0000_0000);
+const_assert_eq!(Stack::<u8, 1>::CHUNK_MAX_SIZE, 4 << 30);
 
 // u16, MIN_ALIGN=1
 const_assert_eq!(Stack::<u16, 1>::ELEMENT_ALIGN, 2);
 const_assert_eq!(Stack::<u16, 1>::ELEMENT_SIZE, 2);
 const_assert_eq!(Stack::<u16, 1>::FOOTER_ALIGN, 8);
-const_assert_eq!(Stack::<u16, 1>::FOOTER_SIZE, 40);
+const_assert_eq!(Stack::<u16, 1>::FOOTER_SIZE, 48);
 const_assert_eq!(Stack::<u16, 1>::CHUNK_ALIGN, 8);
 const_assert_eq!(Stack::<u16, 1>::CHUNK_MIN_SIZE, 64);
 const_assert_eq!(Stack::<u16, 1>::CHUNK_FIRST_SIZE, 512);
-const_assert_eq!(Stack::<u16, 1>::CHUNK_MAX_SIZE, 0x400_0000_0000_0000);
+const_assert_eq!(Stack::<u16, 1>::CHUNK_MAX_SIZE, 4 << 30);
 
 // u32, MIN_ALIGN=1
 const_assert_eq!(Stack::<u32, 1>::ELEMENT_ALIGN, 4);
 const_assert_eq!(Stack::<u32, 1>::ELEMENT_SIZE, 4);
 const_assert_eq!(Stack::<u32, 1>::FOOTER_ALIGN, 8);
-const_assert_eq!(Stack::<u32, 1>::FOOTER_SIZE, 40);
+const_assert_eq!(Stack::<u32, 1>::FOOTER_SIZE, 48);
 const_assert_eq!(Stack::<u32, 1>::CHUNK_ALIGN, 8);
 const_assert_eq!(Stack::<u32, 1>::CHUNK_MIN_SIZE, 64);
 const_assert_eq!(Stack::<u32, 1>::CHUNK_FIRST_SIZE, 512);
-const_assert_eq!(Stack::<u32, 1>::CHUNK_MAX_SIZE, 0x400_0000_0000_0000);
+const_assert_eq!(Stack::<u32, 1>::CHUNK_MAX_SIZE, 4 << 30);
 
 // u64, MIN_ALIGN=1
 const_assert_eq!(Stack::<u64, 1>::ELEMENT_ALIGN, 8);
 const_assert_eq!(Stack::<u64, 1>::ELEMENT_SIZE, 8);
 const_assert_eq!(Stack::<u64, 1>::FOOTER_ALIGN, 8);
-const_assert_eq!(Stack::<u64, 1>::FOOTER_SIZE, 40);
+const_assert_eq!(Stack::<u64, 1>::FOOTER_SIZE, 48);
 const_assert_eq!(Stack::<u64, 1>::CHUNK_ALIGN, 8);
 const_assert_eq!(Stack::<u64, 1>::CHUNK_MIN_SIZE, 64);
 const_assert_eq!(Stack::<u64, 1>::CHUNK_FIRST_SIZE, 512);
-const_assert_eq!(Stack::<u64, 1>::CHUNK_MAX_SIZE, 0x400_0000_0000_0000);
+const_assert_eq!(Stack::<u64, 1>::CHUNK_MAX_SIZE, 4 << 30);
 
 // T9, MIN_ALIGN=1
 const_assert_eq!(Stack::<T9, 1>::ELEMENT_ALIGN, 8);
 const_assert_eq!(Stack::<T9, 1>::ELEMENT_SIZE, 16);
 const_assert_eq!(Stack::<T9, 1>::FOOTER_ALIGN, 8);
-const_assert_eq!(Stack::<T9, 1>::FOOTER_SIZE, 40);
+const_assert_eq!(Stack::<T9, 1>::FOOTER_SIZE, 48);
 const_assert_eq!(Stack::<T9, 1>::CHUNK_ALIGN, 8);
-const_assert_eq!(Stack::<T9, 1>::CHUNK_MIN_SIZE, 64);
+const_assert_eq!(Stack::<T9, 1>::CHUNK_MIN_SIZE, 128);
 const_assert_eq!(Stack::<T9, 1>::CHUNK_FIRST_SIZE, 512);
-const_assert_eq!(Stack::<T9, 1>::CHUNK_MAX_SIZE, 0x400_0000_0000_0000);
+const_assert_eq!(Stack::<T9, 1>::CHUNK_MAX_SIZE, 4 << 30);
 
 // T35, MIN_ALIGN=1
 const_assert_eq!(Stack::<T35, 1>::ELEMENT_ALIGN, 8);
 const_assert_eq!(Stack::<T35, 1>::ELEMENT_SIZE, 40);
 const_assert_eq!(Stack::<T35, 1>::FOOTER_ALIGN, 8);
-const_assert_eq!(Stack::<T35, 1>::FOOTER_SIZE, 40);
+const_assert_eq!(Stack::<T35, 1>::FOOTER_SIZE, 48);
 const_assert_eq!(Stack::<T35, 1>::CHUNK_ALIGN, 8);
 const_assert_eq!(Stack::<T35, 1>::CHUNK_MIN_SIZE, 128);
 const_assert_eq!(Stack::<T35, 1>::CHUNK_FIRST_SIZE, 512);
-const_assert_eq!(Stack::<T35, 1>::CHUNK_MAX_SIZE, 0x400_0000_0000_0000);
+const_assert_eq!(Stack::<T35, 1>::CHUNK_MAX_SIZE, 4 << 30);
 
 // T83, MIN_ALIGN=1
 const_assert_eq!(Stack::<T83, 1>::ELEMENT_ALIGN, 8);
 const_assert_eq!(Stack::<T83, 1>::ELEMENT_SIZE, 88);
 const_assert_eq!(Stack::<T83, 1>::FOOTER_ALIGN, 8);
-const_assert_eq!(Stack::<T83, 1>::FOOTER_SIZE, 40);
+const_assert_eq!(Stack::<T83, 1>::FOOTER_SIZE, 48);
 const_assert_eq!(Stack::<T83, 1>::CHUNK_ALIGN, 8);
 const_assert_eq!(Stack::<T83, 1>::CHUNK_MIN_SIZE, 256);
 const_assert_eq!(Stack::<T83, 1>::CHUNK_FIRST_SIZE, 1024);
-const_assert_eq!(Stack::<T83, 1>::CHUNK_MAX_SIZE, 0x400_0000_0000_0000);
+const_assert_eq!(Stack::<T83, 1>::CHUNK_MAX_SIZE, 4 << 30);
 
 // u8, MIN_ALIGN=4
 const_assert_eq!(Stack::<u8, 4>::ELEMENT_ALIGN, 4);
 const_assert_eq!(Stack::<u8, 4>::ELEMENT_SIZE, 4);
 const_assert_eq!(Stack::<u8, 4>::FOOTER_ALIGN, 8);
-const_assert_eq!(Stack::<u8, 4>::FOOTER_SIZE, 40);
+const_assert_eq!(Stack::<u8, 4>::FOOTER_SIZE, 48);
 const_assert_eq!(Stack::<u8, 4>::CHUNK_ALIGN, 8);
 const_assert_eq!(Stack::<u8, 4>::CHUNK_MIN_SIZE, 64);
 const_assert_eq!(Stack::<u8, 4>::CHUNK_FIRST_SIZE, 512);
-const_assert_eq!(Stack::<u8, 4>::CHUNK_MAX_SIZE, 0x400_0000_0000_0000);
+const_assert_eq!(Stack::<u8, 4>::CHUNK_MAX_SIZE, 4 << 30);
 
 // T9, MIN_ALIGN=64
 const_assert_eq!(Stack::<T9, 64>::ELEMENT_ALIGN, 64);
 const_assert_eq!(Stack::<T9, 64>::ELEMENT_SIZE, 64);
 const_assert_eq!(Stack::<T9, 64>::FOOTER_ALIGN, 64);
-const_assert_eq!(Stack::<T9, 64>::FOOTER_SIZE, 40);
+const_assert_eq!(Stack::<T9, 64>::FOOTER_SIZE, 48);
 const_assert_eq!(Stack::<T9, 64>::CHUNK_ALIGN, 64);
 const_assert_eq!(Stack::<T9, 64>::CHUNK_MIN_SIZE, 256);
 const_assert_eq!(Stack::<T9, 64>::CHUNK_FIRST_SIZE, 1024);
-const_assert_eq!(Stack::<T9, 64>::CHUNK_MAX_SIZE, 0x400_0000_0000_0000);
+const_assert_eq!(Stack::<T9, 64>::CHUNK_MAX_SIZE, 4 << 30);

@@ -4,6 +4,10 @@ pub(crate) const fn max(a: usize, b: usize) -> usize {
     if a > b { a } else { b }
 }
 
+pub(crate) const fn min(a: usize, b: usize) -> usize {
+    if a < b { a } else { b }
+}
+
 /// Rounds `n` down to the nearest multiple of `divisor`.
 ///
 /// # Panics
