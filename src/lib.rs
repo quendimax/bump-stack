@@ -4,7 +4,7 @@ pub(crate) mod util;
 
 extern crate alloc;
 
-use alloc::alloc::{Layout, alloc, handle_alloc_error};
+use alloc::alloc::{Layout, alloc, dealloc, handle_alloc_error};
 use core::cell::Cell;
 use core::marker::PhantomData;
 use core::mem;
@@ -13,6 +13,11 @@ use core::ptr::{self, NonNull};
 #[derive(Debug)]
 pub struct Stack<T, const MIN_ALIGN: usize = 1> {
     // The current chunk we are bump allocating within.
+    //
+    // Its `next` link can point to the none chunk, or to the cached chunk.
+    //
+    // Its `prev` link can point to the none chunk or to the earlier allocated
+    // chunk.
     current_footer: NonNull<ChunkFooter>,
 
     /// The capacity of the stack in elements.
@@ -138,6 +143,22 @@ impl<T> core::default::Default for Stack<T> {
     }
 }
 
+impl<T, const MIN_ALIGN: usize> core::ops::Drop for Stack<T, MIN_ALIGN> {
+    fn drop(&mut self) {
+        while let Some(item) = self.pop() {
+            drop(item);
+        }
+        unsafe {
+            let current_footer_ref = self.current_footer.as_ref();
+            if !current_footer_ref.is_none() {
+                debug_assert!(current_footer_ref.next.get().as_ref().is_none());
+                debug_assert!(current_footer_ref.prev.get().as_ref().is_none());
+                dealloc(current_footer_ref.data.as_ptr(), current_footer_ref.layout);
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 struct ChunkFooter {
     // Pointer to the start of this chunk allocation. This footer is always at
@@ -153,14 +174,14 @@ struct ChunkFooter {
 
     // Link to the previous chunk.
     //
-    // Note that the last node in the `prev` linked list is the canonical none
-    // chunk, whose `prev` link points to itself.
+    // Note that the last node in the `prev` linked list is the none chunk,
+    // whose `prev` link points to itself.
     prev: Cell<NonNull<ChunkFooter>>,
 
     // Link to the next chunk.
     //
-    // Note that the first node in the `next` linked list is the canonical none
-    // chunk, whose `next` link points to itself.
+    // Note that the last node in the `next` linked list is the none chunk,
+    // whose `next` link points to itself.
     next: Cell<NonNull<ChunkFooter>>,
 }
 
@@ -193,8 +214,24 @@ static NONE_CHUNK: NoneChunkFooter = NoneChunkFooter(unsafe {
 });
 
 impl ChunkFooter {
+    /// This is the `NONE_CHUNK` chunk.
     fn is_none(&self) -> bool {
         ptr::eq(self, &NONE_CHUNK.0)
+    }
+
+    /// The chunk is full.
+    fn is_full<T, const MIN_ALIGN: usize>(&self) -> bool {
+        let start = self.data.as_ptr();
+        let ptr = self.ptr.get().as_ptr();
+        let bytes_capacity = ptr as usize - start as usize;
+        bytes_capacity < Stack::<T, MIN_ALIGN>::ELEMENT_SIZE
+    }
+
+    /// The chunk is empty.
+    fn is_empty(&self) -> bool {
+        let ptr = self.ptr.get().as_ptr();
+        let end = NonNull::from(self).cast::<u8>().as_ptr();
+        ptr == end
     }
 }
 
@@ -290,34 +327,47 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
         Some(new_ptr.cast())
     }
 
+    // Should be run only if the current chunk is full
     unsafe fn alloc_element_slow(&mut self) -> NonNull<T> {
         unsafe {
             let current_footer_ptr = self.current_footer;
             let current_footer_ref = current_footer_ptr.as_ref();
 
-            let next_footer_ptr = current_footer_ref.next.get();
-            let next_footer_ref = next_footer_ptr.as_ref();
+            debug_assert!(current_footer_ref.is_full::<T, MIN_ALIGN>());
 
             if current_footer_ref.is_none() {
+                // this is initial stated without allocated chunks at all
                 let new_footer_ptr = self.alloc_chunk(Self::CHUNK_FIRST_SIZE);
                 self.current_footer = new_footer_ptr;
-            } else if next_footer_ref.is_none() {
-                let current_chunk_size = current_footer_ref.layout.size();
-                let new_chunk_size = if current_chunk_size == Self::CHUNK_MAX_SIZE {
-                    Self::CHUNK_MAX_SIZE
-                } else {
-                    current_chunk_size << 1
-                };
-
-                let new_footer_ptr = self.alloc_chunk(new_chunk_size);
-                let new_footer_ref = new_footer_ptr.as_ref();
-
-                current_footer_ref.next.set(new_footer_ptr);
-                new_footer_ref.prev.set(self.current_footer);
-
-                self.current_footer = new_footer_ptr;
             } else {
-                self.current_footer = next_footer_ptr;
+                // at least the current chunk is not none
+
+                let next_footer_ptr = current_footer_ref.next.get();
+                let next_footer_ref = next_footer_ptr.as_ref();
+
+                if next_footer_ref.is_none() {
+                    // the current chunk is single, so create a new one, and
+                    // make it the current chunk.
+
+                    let current_chunk_size = current_footer_ref.layout.size();
+                    let new_chunk_size = if current_chunk_size == Self::CHUNK_MAX_SIZE {
+                        Self::CHUNK_MAX_SIZE
+                    } else {
+                        current_chunk_size << 1
+                    };
+
+                    let new_footer_ptr = self.alloc_chunk(new_chunk_size);
+                    let new_footer_ref = new_footer_ptr.as_ref();
+
+                    current_footer_ref.next.set(new_footer_ptr);
+                    new_footer_ref.prev.set(self.current_footer);
+
+                    self.current_footer = new_footer_ptr;
+                } else {
+                    // there is a next empty chunk, so make it the current chunk
+                    debug_assert!(next_footer_ref.is_empty());
+                    self.current_footer = next_footer_ptr;
+                }
             }
 
             self.try_alloc_element_fast().unwrap_unchecked()
@@ -371,17 +421,19 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
         self.capacity += new_chunk_capacity;
 
         unsafe {
-            let new_footer_ptr = NonNull::new_unchecked(new_footer_start as *mut ChunkFooter);
+            let new_footer_ptr = ptr::with_exposed_provenance_mut::<ChunkFooter>(new_footer_start);
+            let new_start_ptr = ptr::with_exposed_provenance_mut::<u8>(new_start);
+            let new_ptr = ptr::with_exposed_provenance_mut::<u8>(new_ptr);
 
-            util::write_with(new_footer_ptr.as_ptr(), || ChunkFooter {
-                data: NonNull::new_unchecked(new_start as *mut u8),
-                ptr: Cell::new(NonNull::new_unchecked(new_ptr as *mut u8)),
+            util::write_with(new_footer_ptr, || ChunkFooter {
+                data: NonNull::new_unchecked(new_start_ptr),
+                ptr: Cell::new(NonNull::new_unchecked(new_ptr)),
                 layout: new_chunk_layout,
                 prev: Cell::new(NONE_CHUNK.get()),
                 next: Cell::new(NONE_CHUNK.get()),
             });
 
-            new_footer_ptr
+            NonNull::new_unchecked(new_footer_ptr)
         }
     }
 
@@ -425,10 +477,51 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
     }
 
     unsafe fn try_dealloc_element_slow(&mut self) -> Option<*const T> {
-        if self.is_empty() {
-            return None;
+        unsafe {
+            let current_footer_ptr = self.current_footer;
+            let current_footer_ref = current_footer_ptr.as_ref();
+
+            let next_footer_ptr = current_footer_ref.next.get();
+            let next_footer_ref = next_footer_ptr.as_ref();
+
+            debug_assert!(current_footer_ref.is_empty());
+            debug_assert!(next_footer_ref.is_none());
+
+            let prev_footer_ptr = current_footer_ref.prev.get();
+            let prev_footer_ref = next_footer_ptr.as_ref();
+
+            if current_footer_ref.is_none() {
+                debug_assert!(next_footer_ref.is_none());
+                debug_assert!(prev_footer_ref.is_none());
+                return None;
+            }
+
+            if !next_footer_ref.is_none() {
+                let (smaller_ptr, larger_ptr) =
+                    if current_footer_ref.layout.size() < next_footer_ref.layout.size() {
+                        (current_footer_ptr, next_footer_ptr)
+                    } else {
+                        (next_footer_ptr, current_footer_ptr)
+                    };
+
+                self.current_footer = larger_ptr;
+                self.current_footer.as_ref().prev.set(prev_footer_ptr);
+                self.current_footer.as_ref().next.set(NONE_CHUNK.get());
+
+                dealloc(smaller_ptr.cast().as_ptr(), smaller_ptr.as_ref().layout);
+            }
+
+            if prev_footer_ref.is_none() {
+                None
+            } else {
+                debug_assert!(prev_footer_ref.is_full::<T, MIN_ALIGN>());
+
+                prev_footer_ref.next.set(self.current_footer);
+                self.current_footer = prev_footer_ptr;
+
+                self.try_dealloc_element_fast()
+            }
         }
-        todo!()
     }
 }
 
