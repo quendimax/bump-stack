@@ -7,6 +7,7 @@ extern crate alloc;
 use alloc::alloc::{Layout, alloc, handle_alloc_error};
 use core::cell::Cell;
 use core::marker::PhantomData;
+use core::mem;
 use core::ptr::NonNull;
 
 #[derive(Debug)]
@@ -81,14 +82,13 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
     /// between `MIN_ALIGN` and `T`'s alignment.
     const ELEMENT_ALIGN: usize = {
         assert!(MIN_ALIGN.is_power_of_two());
-        util::max(Layout::new::<T>().align(), MIN_ALIGN)
+        util::max(mem::align_of::<T>(), MIN_ALIGN)
     };
 
     /// `ELEMENT_SIZE` is not always equal to `T`'s size. This is actually the
     /// size of memory space required to store an `T` element with required
     /// alignment.
-    const ELEMENT_SIZE: usize = Layout::new::<T>()
-        .size()
+    const ELEMENT_SIZE: usize = mem::size_of::<T>()
         .checked_next_multiple_of(Self::ELEMENT_ALIGN)
         .unwrap();
 
@@ -98,21 +98,21 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
     const FOOTER_ALIGN: usize =
         util::max(Layout::new::<ChunkFooter>().align(), Self::ELEMENT_ALIGN);
 
-    const FOOTER_SIZE: usize = Layout::new::<ChunkFooter>().size();
+    const FOOTER_SIZE: usize = mem::size_of::<ChunkFooter>();
 
     /// Chunk alignment is the same as element alignment.
-    const CHUNK_ALIGN: usize = Self::ELEMENT_ALIGN;
+    const CHUNK_ALIGN: usize = util::max(Self::ELEMENT_ALIGN, 8);
 
     /// Chunk size enough for at least one element.
     const CHUNK_MIN_SIZE: usize = Self::chunk_size_for(1);
 
     /// Chunk size for the first chunk if capacity is not specified with
     /// [`Stack::with_capacity`].
-    const CHUNK_FIRST_SIZE: usize = Self::chunk_size_for(8);
+    const CHUNK_FIRST_SIZE: usize = util::max(Self::chunk_size_for(8), 0x200);
 
     /// Maximal possible chunk size. It is equal `isize::MAX` value rounded down
     /// to the nearest power of two.
-    const CHUNK_MAX_SIZE: usize = util::round_down_to_pow2(isize::MAX as usize);
+    const CHUNK_MAX_SIZE: usize = util::round_down_to_pow2(isize::MAX as usize >> 4);
 
     /// Calculate chunk size big enough for the given number of elements. The
     /// chunk is a power of two.
