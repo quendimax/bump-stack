@@ -56,8 +56,8 @@ struct EmptyChunkFooter(ChunkFooter);
 unsafe impl Sync for EmptyChunkFooter {}
 
 impl EmptyChunkFooter {
-    fn get(&self) -> NonNull<ChunkFooter> {
-        NonNull::from(&self.0)
+    const fn get(&'static self) -> NonNull<ChunkFooter> {
+        NonNull::new(&self.0 as *const ChunkFooter as *mut ChunkFooter).unwrap()
     }
 }
 
@@ -269,7 +269,18 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
 
 // Public API
 impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
-    pub fn new() -> Self {
+    /// Constructs a new, empty `Stack<T>`.
+    ///
+    /// The stack will not allocate until elements are pushed onto it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bump_stack::Stack;
+    ///
+    /// let mut stack: Stack<i32> = Stack::new();
+    /// ```
+    pub const fn new() -> Self {
         Self {
             current_footer: EMPTY_CHUNK.get(),
             capacity: 0,
@@ -278,21 +289,61 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
         }
     }
 
+    /// Returns the total number of elements the stack can hold without new
+    /// allocating.
     #[inline]
-    pub fn capacity(&self) -> usize {
+    pub const fn capacity(&self) -> usize {
         self.capacity
     }
 
+    /// Returns the number of elements in the vector, also referred to as its ‘length’.
     #[inline]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.length
     }
 
+    /// Returns `true` if the stack contains no elements.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bump_stack::Stack;
+    ///
+    /// let mut s = Stack::<i32>::new();
+    /// assert!(s.is_empty());
+    ///
+    /// s.push(1);
+    /// assert!(!s.is_empty());
+    /// ```
     #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.length == 0
+    pub const fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
+    /// Appends an element to the stack.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the global allocator cannot allocate a new chunk of memory.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use bump_stack::Stack;
+    /// let mut stk = Stack::<i32>::new();
+    /// stk.push(3);
+    /// //TODO: assert_eq!(stk, [1, 2, 3]);
+    /// ```
+    ///
+    /// # Time complexity
+    ///
+    /// Takes amortized *O*(1) time. If the stack's current chunk of memory is
+    /// exhausted, it tries to use the cached one if it exists, otherwise it
+    /// tries to allocate a new chunk.
+    ///
+    /// If the new chunk of memory is too big, it tries to divide the capacity
+    /// by two and allocate it again until it reaches the minimum capacity. If
+    /// it does, it panics.
     #[inline]
     pub fn push(&mut self, value: T) {
         self.push_with(|| value);
@@ -310,7 +361,11 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
         self.length += 1;
     }
 }
+
 impl<T> core::default::Default for Stack<T> {
+    /// Creates an empty `Stack<T>`.
+    ///
+    /// The stack will not allocate until elements are pushed onto it.
     #[inline]
     fn default() -> Self {
         Self::new()
