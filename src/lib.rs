@@ -39,7 +39,7 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
     /// ```
     pub const fn new() -> Self {
         Self {
-            current_footer: EMPTY_CHUNK.get(),
+            current_footer: NONE_CHUNK.get(),
             capacity: 0,
             length: 0,
             _phantom: PhantomData,
@@ -153,48 +153,48 @@ struct ChunkFooter {
 
     // Link to the previous chunk.
     //
-    // Note that the last node in the `prev` linked list is the canonical empty
+    // Note that the last node in the `prev` linked list is the canonical none
     // chunk, whose `prev` link points to itself.
     prev: Cell<NonNull<ChunkFooter>>,
 
     // Link to the next chunk.
     //
-    // Note that the first node in the `next` linked list is the canonical empty
+    // Note that the first node in the `next` linked list is the canonical none
     // chunk, whose `next` link points to itself.
     next: Cell<NonNull<ChunkFooter>>,
 }
 
 #[repr(transparent)]
-struct EmptyChunkFooter(ChunkFooter);
+struct NoneChunkFooter(ChunkFooter);
 
-unsafe impl Sync for EmptyChunkFooter {}
+unsafe impl Sync for NoneChunkFooter {}
 
-impl EmptyChunkFooter {
+impl NoneChunkFooter {
     const fn get(&'static self) -> NonNull<ChunkFooter> {
         NonNull::new(&self.0 as *const ChunkFooter as *mut ChunkFooter).unwrap()
     }
 }
 
 // Empty chunk that contains only its footer.
-static EMPTY_CHUNK: EmptyChunkFooter = EmptyChunkFooter(unsafe {
+static NONE_CHUNK: NoneChunkFooter = NoneChunkFooter(unsafe {
     ChunkFooter {
-        data: NonNull::new_unchecked(&EMPTY_CHUNK as *const EmptyChunkFooter as *mut u8),
+        data: NonNull::new_unchecked(&NONE_CHUNK as *const NoneChunkFooter as *mut u8),
         ptr: Cell::new(NonNull::new_unchecked(
-            &EMPTY_CHUNK as *const EmptyChunkFooter as *mut u8,
+            &NONE_CHUNK as *const NoneChunkFooter as *mut u8,
         )),
         layout: Layout::new::<ChunkFooter>(),
         prev: Cell::new(NonNull::new_unchecked(
-            &EMPTY_CHUNK as *const EmptyChunkFooter as *mut ChunkFooter,
+            &NONE_CHUNK as *const NoneChunkFooter as *mut ChunkFooter,
         )),
         next: Cell::new(NonNull::new_unchecked(
-            &EMPTY_CHUNK as *const EmptyChunkFooter as *mut ChunkFooter,
+            &NONE_CHUNK as *const NoneChunkFooter as *mut ChunkFooter,
         )),
     }
 });
 
 impl ChunkFooter {
-    fn is_empty(&self) -> bool {
-        ptr::eq(self, &EMPTY_CHUNK.0)
+    fn is_none(&self) -> bool {
+        ptr::eq(self, &NONE_CHUNK.0)
     }
 }
 
@@ -298,10 +298,10 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
             let next_footer_ptr = current_footer_ref.next.get();
             let next_footer_ref = next_footer_ptr.as_ref();
 
-            if current_footer_ref.is_empty() {
+            if current_footer_ref.is_none() {
                 let new_footer_ptr = self.alloc_chunk(Self::CHUNK_FIRST_SIZE);
                 self.current_footer = new_footer_ptr;
-            } else if next_footer_ref.is_empty() {
+            } else if next_footer_ref.is_none() {
                 let current_chunk_size = current_footer_ref.layout.size();
                 let new_chunk_size = if current_chunk_size == Self::CHUNK_MAX_SIZE {
                     Self::CHUNK_MAX_SIZE
@@ -377,8 +377,8 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
                 data: NonNull::new_unchecked(new_start as *mut u8),
                 ptr: Cell::new(NonNull::new_unchecked(new_ptr as *mut u8)),
                 layout: new_chunk_layout,
-                prev: Cell::new(EMPTY_CHUNK.get()),
-                next: Cell::new(EMPTY_CHUNK.get()),
+                prev: Cell::new(NONE_CHUNK.get()),
+                next: Cell::new(NONE_CHUNK.get()),
             });
 
             new_footer_ptr

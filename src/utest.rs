@@ -7,8 +7,8 @@ use pretty_assertions::assert_eq;
 fn stack_new() {
     let stack = Stack::<u8>::new();
     unsafe {
-        assert!(stack.current_footer.as_ref().is_empty());
-        assert!(core::ptr::eq(stack.current_footer.as_ptr(), &EMPTY_CHUNK.0));
+        assert!(stack.current_footer.as_ref().is_none());
+        assert!(core::ptr::eq(stack.current_footer.as_ptr(), &NONE_CHUNK.0));
     }
     assert!(stack.is_empty());
 }
