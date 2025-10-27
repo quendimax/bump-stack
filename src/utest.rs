@@ -4,7 +4,7 @@ use super::*;
 use pretty_assertions::assert_eq;
 
 #[test]
-fn stack_new() {
+fn stack_without_chunks() {
     let stack = Stack::<u8>::new();
     unsafe {
         assert!(stack.current_footer.as_ref().is_none());
@@ -14,23 +14,38 @@ fn stack_new() {
 }
 
 #[test]
-fn stack_push() {
-    let mut stack = Stack::<u32>::new();
+fn stack_with_one_chunk() {
+    type Stack = super::Stack<usize>;
+    let mut stack = Stack::new();
     assert_eq!(stack.capacity(), 0);
     assert_eq!(stack.len(), 0);
 
-    stack.push(1);
+    unsafe {
+        assert!(stack.current_footer.as_ref().is_none());
+        assert!(stack.current_footer.as_ref().is_empty());
+    }
+
+    stack.push(0);
     let capacity = stack.capacity();
-    assert!(capacity >= 8);
-    assert_eq!(stack.len(), 1);
 
-    stack.push(2);
-    assert_eq!(stack.capacity(), capacity);
-    assert_eq!(stack.len(), 2);
+    for i in 1..capacity {
+        unsafe {
+            assert!(!stack.current_footer.as_ref().is_none());
+            assert!(stack.current_footer.as_ref().remains() >= Stack::ELEMENT_SIZE);
+        }
+        stack.push(i);
 
-    stack.push_with(|| 2);
-    assert_eq!(stack.capacity(), capacity);
-    assert_eq!(stack.len(), 3);
+        assert_eq!(stack.capacity(), capacity);
+        assert_eq!(stack.len(), i + 1);
+    }
+
+    unsafe {
+        let current_footer = stack.current_footer.as_ref();
+        assert!(!current_footer.is_none());
+        assert!(current_footer.remains() < Stack::ELEMENT_SIZE);
+        assert!(current_footer.prev.get().as_ref().is_none());
+        assert!(current_footer.next.get().as_ref().is_none());
+    }
 }
 
 #[test]

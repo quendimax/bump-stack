@@ -12,12 +12,12 @@ use core::ptr::{self, NonNull};
 
 #[derive(Debug)]
 pub struct Stack<T, const MIN_ALIGN: usize = 1> {
-    // The current chunk we are bump allocating within.
-    //
-    // Its `next` link can point to the none chunk, or to the cached chunk.
-    //
-    // Its `prev` link can point to the none chunk or to the earlier allocated
-    // chunk.
+    /// The current chunk we are bump allocating within.
+    ///
+    /// Its `next` link can point to the none chunk, or to the cached chunk.
+    ///
+    /// Its `prev` link can point to the none chunk or to the earlier allocated
+    /// chunk.
     current_footer: NonNull<ChunkFooter>,
 
     /// The capacity of the stack in elements.
@@ -153,7 +153,7 @@ impl<T, const MIN_ALIGN: usize> core::ops::Drop for Stack<T, MIN_ALIGN> {
             if !current_footer_ref.is_none() {
                 debug_assert!(current_footer_ref.next.get().as_ref().is_none());
                 debug_assert!(current_footer_ref.prev.get().as_ref().is_none());
-                dealloc(current_footer_ref.data.as_ptr(), current_footer_ref.layout);
+                self.dealloc_chunk(current_footer_ref);
             }
         }
     }
@@ -219,19 +219,28 @@ impl ChunkFooter {
         ptr::eq(self, &NONE_CHUNK.0)
     }
 
-    /// The chunk is full.
-    fn is_full<T, const MIN_ALIGN: usize>(&self) -> bool {
-        let start = self.data.as_ptr();
-        let ptr = self.ptr.get().as_ptr();
-        let bytes_capacity = ptr as usize - start as usize;
-        bytes_capacity < Stack::<T, MIN_ALIGN>::ELEMENT_SIZE
+    /// Amount of unoccupied bytes in the chunk.
+    fn remains(&self) -> usize {
+        let start = self.data.as_ptr() as usize;
+        let ptr = self.ptr.get().as_ptr() as usize;
+        debug_assert!(start <= ptr);
+        ptr - start
     }
 
     /// The chunk is empty.
     fn is_empty(&self) -> bool {
-        let ptr = self.ptr.get().as_ptr();
-        let end = NonNull::from(self).cast::<u8>().as_ptr();
+        let ptr = self.ptr.get().as_ptr() as usize;
+        let end = self as *const Self as usize;
+        debug_assert!(ptr <= end);
         ptr == end
+    }
+
+    /// The capacity of the chunk in bytes.
+    fn capacity(&self) -> usize {
+        let end = self as *const Self as usize;
+        let start = self.data.as_ptr() as usize;
+        debug_assert!(start < end);
+        end - start
     }
 }
 
@@ -279,15 +288,20 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
 
     /// Calculate chunk size big enough for the given number of elements. The
     /// chunk is a power of two.
-    const fn chunk_size_for(elements_count: usize) -> usize {
+    const fn chunk_size_for(mut elements_count: usize) -> usize {
+        if elements_count < 2 {
+            // I'm not sure that `alloc` always returns pointer aligned as
+            // requested, so it's possible that the allocated memory for one
+            // element is not enough for that element. So I'm increasing here
+            // the requested size for at least two elements.
+            elements_count = 2;
+        }
         let mut chunk_size = elements_count * Self::ELEMENT_SIZE;
         assert!(chunk_size.is_multiple_of(Self::ELEMENT_ALIGN));
 
         chunk_size = chunk_size.next_multiple_of(Self::FOOTER_ALIGN);
         chunk_size += Self::FOOTER_SIZE;
 
-        // for a case (is it possible?) if the alloc returns unaligned pointer.
-        chunk_size += util::max(Self::FOOTER_ALIGN, Self::ELEMENT_ALIGN) - 1;
         chunk_size.next_power_of_two()
     }
 }
@@ -333,7 +347,7 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
             let current_footer_ptr = self.current_footer;
             let current_footer_ref = current_footer_ptr.as_ref();
 
-            debug_assert!(current_footer_ref.is_full::<T, MIN_ALIGN>());
+            debug_assert!(current_footer_ref.remains() < Self::ELEMENT_SIZE);
 
             if current_footer_ref.is_none() {
                 // this is initial stated without allocated chunks at all
@@ -508,19 +522,29 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
                 self.current_footer.as_ref().prev.set(prev_footer_ptr);
                 self.current_footer.as_ref().next.set(NONE_CHUNK.get());
 
-                dealloc(smaller_ptr.cast().as_ptr(), smaller_ptr.as_ref().layout);
+                self.dealloc_chunk(smaller_ptr.as_ref());
             }
 
             if prev_footer_ref.is_none() {
                 None
             } else {
-                debug_assert!(prev_footer_ref.is_full::<T, MIN_ALIGN>());
+                debug_assert!(prev_footer_ref.remains() < Self::ELEMENT_SIZE);
 
                 prev_footer_ref.next.set(self.current_footer);
                 self.current_footer = prev_footer_ptr;
 
                 self.try_dealloc_element_fast()
             }
+        }
+    }
+
+    unsafe fn dealloc_chunk(&mut self, footer: &ChunkFooter) {
+        unsafe {
+            let chunk_capacity = footer.capacity() / Self::ELEMENT_SIZE;
+            debug_assert!(chunk_capacity <= self.capacity());
+            self.capacity -= chunk_capacity;
+            debug_assert!(self.len() <= self.capacity());
+            dealloc(footer.data.as_ptr(), footer.layout);
         }
     }
 }
