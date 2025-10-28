@@ -14,9 +14,9 @@ use core::ptr::{self, NonNull};
 pub struct Stack<T, const MIN_ALIGN: usize = 1> {
     /// The current chunk we are bump allocating within.
     ///
-    /// Its `next` link can point to the none chunk, or to the cached chunk.
+    /// Its `next` link can point to the dead chunk, or to the cached chunk.
     ///
-    /// Its `prev` link can point to the none chunk or to the earlier allocated
+    /// Its `prev` link can point to the dead chunk or to the earlier allocated
     /// chunk.
     current_footer: Cell<NonNull<ChunkFooter>>,
 
@@ -44,7 +44,7 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
     /// ```
     pub const fn new() -> Self {
         Self {
-            current_footer: Cell::new(NONE_CHUNK.get()),
+            current_footer: Cell::new(DEAD_CHUNK.get()),
             capacity: 0,
             length: 0,
             _phantom: PhantomData,
@@ -152,9 +152,9 @@ impl<T, const MIN_ALIGN: usize> core::ops::Drop for Stack<T, MIN_ALIGN> {
         }
         unsafe {
             let current_footer = self.current_footer.get().as_ref();
-            if !current_footer.is_none() {
-                debug_assert!(current_footer.prev.get().as_ref().is_none());
-                debug_assert!(current_footer.next.get().as_ref().is_none());
+            if !current_footer.is_dead() {
+                debug_assert!(current_footer.prev.get().as_ref().is_dead());
+                debug_assert!(current_footer.next.get().as_ref().is_dead());
                 self.dealloc_chunk(current_footer);
             }
         }
@@ -176,49 +176,49 @@ struct ChunkFooter {
 
     // Link to the previous chunk.
     //
-    // Note that the last node in the `prev` linked list is the none chunk,
+    // Note that the last node in the `prev` linked list is the dead chunk,
     // whose `prev` link points to itself.
     prev: Cell<NonNull<ChunkFooter>>,
 
     // Link to the next chunk.
     //
-    // Note that the last node in the `next` linked list is the none chunk,
+    // Note that the last node in the `next` linked list is the dead chunk,
     // whose `next` link points to itself.
     next: Cell<NonNull<ChunkFooter>>,
 }
 
 #[repr(transparent)]
-struct NoneChunkFooter(ChunkFooter);
+struct DeadChunkFooter(ChunkFooter);
 
-unsafe impl Sync for NoneChunkFooter {}
+unsafe impl Sync for DeadChunkFooter {}
 
-impl NoneChunkFooter {
+impl DeadChunkFooter {
     const fn get(&'static self) -> NonNull<ChunkFooter> {
-        unsafe { NonNull::new_unchecked(&NONE_CHUNK as *const NoneChunkFooter as *mut ChunkFooter) }
+        unsafe { NonNull::new_unchecked(&DEAD_CHUNK as *const DeadChunkFooter as *mut ChunkFooter) }
     }
 }
 
 // Empty chunk that contains only its footer.
-static NONE_CHUNK: NoneChunkFooter = NoneChunkFooter(unsafe {
+static DEAD_CHUNK: DeadChunkFooter = DeadChunkFooter(unsafe {
     ChunkFooter {
-        data: NonNull::new_unchecked(&NONE_CHUNK as *const NoneChunkFooter as *mut u8),
+        data: NonNull::new_unchecked(&DEAD_CHUNK as *const DeadChunkFooter as *mut u8),
         ptr: Cell::new(NonNull::new_unchecked(
-            &NONE_CHUNK as *const NoneChunkFooter as *mut u8,
+            &DEAD_CHUNK as *const DeadChunkFooter as *mut u8,
         )),
         layout: Layout::new::<ChunkFooter>(),
         prev: Cell::new(NonNull::new_unchecked(
-            &NONE_CHUNK as *const NoneChunkFooter as *mut ChunkFooter,
+            &DEAD_CHUNK as *const DeadChunkFooter as *mut ChunkFooter,
         )),
         next: Cell::new(NonNull::new_unchecked(
-            &NONE_CHUNK as *const NoneChunkFooter as *mut ChunkFooter,
+            &DEAD_CHUNK as *const DeadChunkFooter as *mut ChunkFooter,
         )),
     }
 });
 
 impl ChunkFooter {
-    /// This is the `NONE_CHUNK` chunk.
-    fn is_none(&self) -> bool {
-        ptr::eq(self, &NONE_CHUNK.0)
+    /// This is the `DEAD_CHUNK` chunk.
+    fn is_dead(&self) -> bool {
+        ptr::eq(self, &DEAD_CHUNK.0)
     }
 
     /// Amount of unoccupied bytes in the chunk.
@@ -351,21 +351,21 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
 
             debug_assert!(current_footer.remains() < Self::ELEMENT_SIZE);
 
-            if current_footer.is_none() {
+            if current_footer.is_dead() {
                 // this is initial state without allocated chunks at all
-                debug_assert!(current_footer.is_none());
-                debug_assert!(current_footer.prev.get().as_ref().is_none());
-                debug_assert!(current_footer.next.get().as_ref().is_none());
+                debug_assert!(current_footer.is_dead());
+                debug_assert!(current_footer.prev.get().as_ref().is_dead());
+                debug_assert!(current_footer.next.get().as_ref().is_dead());
 
                 let new_footer_ptr = self.alloc_chunk(Self::CHUNK_FIRST_SIZE);
                 self.current_footer.set(new_footer_ptr);
             } else {
-                // at least the current chunk is not none
+                // at least the current chunk is not dead
 
                 let next_footer_ptr = current_footer.next.get();
                 let next_footer = next_footer_ptr.as_ref();
 
-                if next_footer.is_none() {
+                if next_footer.is_dead() {
                     // the current chunk is single, so create a new one, and
                     // make it the current chunk.
 
@@ -449,8 +449,8 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
                 data: NonNull::new_unchecked(new_start_ptr),
                 ptr: Cell::new(NonNull::new_unchecked(new_ptr)),
                 layout: new_chunk_layout,
-                prev: Cell::new(NONE_CHUNK.get()),
-                next: Cell::new(NONE_CHUNK.get()),
+                prev: Cell::new(DEAD_CHUNK.get()),
+                next: Cell::new(DEAD_CHUNK.get()),
             });
 
             NonNull::new_unchecked(new_footer_ptr)
@@ -507,24 +507,24 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
             let prev_footer_ptr = current_footer.prev.get();
             let prev_footer = prev_footer_ptr.as_ref();
 
-            if current_footer.is_none() {
+            if current_footer.is_dead() {
                 debug_assert!(
-                    next_footer.is_none(),
+                    next_footer.is_dead(),
                     "{:#p} - {:#p} {:?}",
-                    &NONE_CHUNK,
-                    &NONE_CHUNK.0,
-                    &NONE_CHUNK.0
+                    &DEAD_CHUNK,
+                    &DEAD_CHUNK.0,
+                    &DEAD_CHUNK.0
                 );
-                debug_assert!(prev_footer.is_none());
+                debug_assert!(prev_footer.is_dead());
                 return None;
             }
 
             debug_assert!(current_footer.is_empty());
             debug_assert!(next_footer.is_empty(),);
 
-            if !next_footer.is_none() {
+            if !next_footer.is_dead() {
                 if current_footer.layout.size() < next_footer.layout.size() {
-                    debug_assert!(next_footer.next.get().as_ref().is_none());
+                    debug_assert!(next_footer.next.get().as_ref().is_dead());
 
                     self.current_footer.set(next_footer_ptr);
                     self.current_footer.get().as_ref().prev.set(prev_footer_ptr);
@@ -537,10 +537,10 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
                     .get()
                     .as_ref()
                     .next
-                    .set(NONE_CHUNK.get());
+                    .set(DEAD_CHUNK.get());
             }
 
-            if prev_footer.is_none() {
+            if prev_footer.is_dead() {
                 None
             } else {
                 // check if prev_footer is full
@@ -565,5 +565,11 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
     }
 }
 
-mod stest; // static checks
-mod utest; // unit tests
+/// Collection of static tests for inner constants of Stack. They are enabled
+/// only for some platforms, where I could test them. Look inside to see which
+/// ones exactly.
+mod stest;
+
+/// Unit tests.
+#[cfg(test)]
+mod utest;
