@@ -51,6 +51,62 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
         }
     }
 
+    /// Constructs a new, empty `Stack<T>` with at least the specified capacity.
+    ///
+    /// The stack will be able to hold at least `capacity` elements without new
+    /// allocations. This method is allowed to allocate for more elements than
+    /// `capacity`. If `capacity` is zero, the stack will not allocate.
+    ///
+    /// If it is important to know the exact allocated capacity of a `Stack`,
+    /// always use the [`capacity`] method after construction.
+    ///
+    /// For `Stack<T>` where `T` is a zero-sized type, there will be no
+    /// allocation and the capacity will always be `usize::MAX`.
+    ///
+    /// [`capacity`]: Stack::capacity
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `capacity` exceeds `isize::MAX` _bytes_.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use bump_stack::Stack;
+    /// let mut stk = Stack::<i32>::with_capacity(10);
+    ///
+    /// // The stack contains no items, even though it has capacity for more
+    /// assert_eq!(stk.len(), 0);
+    /// assert!(stk.capacity() >= 10);
+    ///
+    /// // These are all done without additional allocations...
+    /// for i in 0..10 {
+    ///     stk.push(i);
+    /// }
+    /// assert_eq!(stk.len(), 10);
+    /// assert!(stk.capacity() >= 10);
+    ///
+    /// // ...but this may make the stack allocate a new chunk
+    /// stk.push(11);
+    /// assert_eq!(stk.len(), 11);
+    /// assert!(stk.capacity() >= 11);
+    ///
+    /// // A stack of a zero-sized type will always over-allocate, since no
+    /// // allocation is necessary
+    /// let stk_units = Stack::<()>::with_capacity(10);
+    /// assert_eq!(stk_units.capacity(), usize::MAX);
+    /// ```
+    pub fn with_capacity(capacity: usize) -> Self {
+        let mut stack = Self::new();
+        debug_assert!(unsafe { stack.current_footer.as_ref().is_dead() });
+        if capacity != 0 && Self::ELEMENT_SIZE != 0 {
+            let chunk_size = Self::chunk_size_for(capacity);
+            let footer = unsafe { stack.alloc_chunk(chunk_size) };
+            stack.current_footer = footer;
+        }
+        stack
+    }
+
     /// Returns the total number of elements the stack can hold without new
     /// allocating.
     #[inline]
@@ -62,7 +118,32 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
         }
     }
 
-    /// Returns the number of elements in the vector, also referred to as its ‘length’.
+    /// Returns the total number of elements the stack can hold without
+    /// additional allocations.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use bump_stack::Stack;
+    /// let mut stk: Stack<i32> = Stack::with_capacity(10);
+    /// stk.push(42);
+    /// assert!(stk.capacity() >= 10);
+    /// ```
+    ///
+    /// A stack with zero-sized elements will always have a capacity of
+    /// `usize::MAX`:
+    ///
+    /// ```
+    /// # use bump_stack::Stack;
+    /// #[derive(Clone)]
+    /// struct ZeroSized;
+    ///
+    /// fn main() {
+    ///     assert_eq!(std::mem::size_of::<ZeroSized>(), 0);
+    ///     let stk = Stack::<ZeroSized>::with_capacity(0);
+    ///     assert_eq!(stk.capacity(), usize::MAX);
+    /// }
+    /// ```
     #[inline]
     pub const fn len(&self) -> usize {
         self.length
