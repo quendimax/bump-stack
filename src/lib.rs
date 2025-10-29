@@ -18,7 +18,7 @@ pub struct Stack<T, const MIN_ALIGN: usize = 1> {
     ///
     /// Its `prev` link can point to the dead chunk or to the earlier allocated
     /// chunk.
-    current_footer: Cell<NonNull<ChunkFooter>>,
+    current_footer: NonNull<ChunkFooter>,
 
     /// The capacity of the stack in elements.
     capacity: usize,
@@ -44,7 +44,7 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
     /// ```
     pub const fn new() -> Self {
         Self {
-            current_footer: Cell::new(DEAD_CHUNK.get()),
+            current_footer: DEAD_CHUNK.get(),
             capacity: 0,
             length: 0,
             _phantom: PhantomData,
@@ -151,7 +151,7 @@ impl<T, const MIN_ALIGN: usize> core::ops::Drop for Stack<T, MIN_ALIGN> {
             drop(item);
         }
         unsafe {
-            let current_footer = self.current_footer.get().as_ref();
+            let current_footer = self.current_footer.as_ref();
             if !current_footer.is_dead() {
                 debug_assert!(current_footer.prev.get().as_ref().is_dead());
                 debug_assert!(current_footer.next.get().as_ref().is_dead());
@@ -319,7 +319,7 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
     }
 
     fn try_alloc_element_fast(&self) -> Option<NonNull<T>> {
-        let current_footer = unsafe { self.current_footer.get().as_ref() };
+        let current_footer = unsafe { self.current_footer.as_ref() };
 
         let start = current_footer.data.as_ptr();
         let ptr = current_footer.ptr.get().as_ptr();
@@ -346,7 +346,7 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
     // Should be run only if the current chunk is full
     unsafe fn alloc_element_slow(&mut self) -> NonNull<T> {
         unsafe {
-            let current_footer_ptr = self.current_footer.get();
+            let current_footer_ptr = self.current_footer;
             let current_footer = current_footer_ptr.as_ref();
 
             debug_assert!(current_footer.remains() < Self::ELEMENT_SIZE);
@@ -358,7 +358,7 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
                 debug_assert!(current_footer.next.get().as_ref().is_dead());
 
                 let new_footer_ptr = self.alloc_chunk(Self::CHUNK_FIRST_SIZE);
-                self.current_footer.set(new_footer_ptr);
+                self.current_footer = new_footer_ptr;
             } else {
                 // at least the current chunk is not dead
 
@@ -380,13 +380,13 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
                     let new_footer = new_footer_ptr.as_ref();
 
                     current_footer.next.set(new_footer_ptr);
-                    new_footer.prev.set(self.current_footer.get());
+                    new_footer.prev.set(self.current_footer);
 
-                    self.current_footer.set(new_footer_ptr);
+                    self.current_footer = new_footer_ptr;
                 } else {
                     // there is a next empty chunk, so make it the current chunk
                     debug_assert!(next_footer.is_empty());
-                    self.current_footer.set(next_footer_ptr);
+                    self.current_footer = next_footer_ptr;
                 }
             }
 
@@ -468,7 +468,7 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
     }
 
     unsafe fn try_dealloc_element_fast(&mut self) -> Option<*const T> {
-        let current_footer_ptr = self.current_footer.get();
+        let current_footer_ptr = self.current_footer;
         let current_footer = unsafe { current_footer_ptr.as_ref() };
 
         let ptr = current_footer.ptr.get().as_ptr() as *mut T;
@@ -498,7 +498,7 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
 
     unsafe fn try_dealloc_element_slow(&mut self) -> Option<*const T> {
         unsafe {
-            let current_footer_ptr = self.current_footer.get();
+            let current_footer_ptr = self.current_footer;
             let current_footer = current_footer_ptr.as_ref();
 
             let next_footer_ptr = current_footer.next.get();
@@ -526,18 +526,14 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
                 if current_footer.layout.size() < next_footer.layout.size() {
                     debug_assert!(next_footer.next.get().as_ref().is_dead());
 
-                    self.current_footer.set(next_footer_ptr);
-                    self.current_footer.get().as_ref().prev.set(prev_footer_ptr);
+                    self.current_footer = next_footer_ptr;
+                    self.current_footer.as_ref().prev.set(prev_footer_ptr);
 
                     self.dealloc_chunk(current_footer);
                 } else {
                     self.dealloc_chunk(next_footer);
                 }
-                self.current_footer
-                    .get()
-                    .as_ref()
-                    .next
-                    .set(DEAD_CHUNK.get());
+                self.current_footer.as_ref().next.set(DEAD_CHUNK.get());
             }
 
             if prev_footer.is_dead() {
@@ -546,8 +542,8 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
                 // check if prev_footer is full
                 debug_assert!(prev_footer.remains() < Self::ELEMENT_SIZE);
 
-                prev_footer.next.set(self.current_footer.get());
-                self.current_footer.set(prev_footer_ptr);
+                prev_footer.next.set(self.current_footer);
+                self.current_footer = prev_footer_ptr;
 
                 self.try_dealloc_element_fast()
             }

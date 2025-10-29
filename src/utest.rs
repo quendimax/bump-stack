@@ -5,11 +5,8 @@ use pretty_assertions::assert_eq;
 fn stack_without_chunks() {
     let stack = Stack::<u8>::new();
     unsafe {
-        assert!(stack.current_footer.get().as_ref().is_dead());
-        assert!(core::ptr::eq(
-            stack.current_footer.get().as_ptr(),
-            &DEAD_CHUNK.0
-        ),);
+        assert!(stack.current_footer.as_ref().is_dead());
+        assert!(core::ptr::eq(stack.current_footer.as_ptr(), &DEAD_CHUNK.0),);
     }
     assert!(stack.is_empty());
 }
@@ -22,8 +19,8 @@ fn stack_one_chunk() {
     assert_eq!(stack.len(), 0);
 
     unsafe {
-        assert!(stack.current_footer.get().as_ref().is_dead());
-        assert!(stack.current_footer.get().as_ref().is_empty());
+        assert!(stack.current_footer.as_ref().is_dead());
+        assert!(stack.current_footer.as_ref().is_empty());
     }
 
     stack.push(0);
@@ -33,8 +30,8 @@ fn stack_one_chunk() {
 
     for i in 1..capacity {
         unsafe {
-            assert!(!stack.current_footer.get().as_ref().is_dead());
-            assert!(stack.current_footer.get().as_ref().remains() >= Stack::ELEMENT_SIZE);
+            assert!(!stack.current_footer.as_ref().is_dead());
+            assert!(stack.current_footer.as_ref().remains() >= Stack::ELEMENT_SIZE);
         }
         stack.push(i);
 
@@ -43,7 +40,7 @@ fn stack_one_chunk() {
     }
 
     unsafe {
-        let current_footer = stack.current_footer.get().as_ref();
+        let current_footer = stack.current_footer.as_ref();
         assert!(!current_footer.is_dead());
         assert!(current_footer.remains() < Stack::ELEMENT_SIZE);
         assert!(current_footer.prev.get().as_ref().is_dead());
@@ -52,14 +49,14 @@ fn stack_one_chunk() {
 
     for i in (0..capacity).rev() {
         unsafe {
-            assert!(!stack.current_footer.get().as_ref().is_dead());
+            assert!(!stack.current_footer.as_ref().is_dead());
         }
         assert_eq!(stack.pop(), Some(i));
         assert_eq!(stack.len(), i);
     }
     assert!(stack.is_empty());
     unsafe {
-        let current_footer = stack.current_footer.get().as_ref();
+        let current_footer = stack.current_footer.as_ref();
         assert!(!current_footer.is_dead());
         assert!(current_footer.prev.get().as_ref().is_dead());
         assert!(current_footer.next.get().as_ref().is_dead());
@@ -91,7 +88,7 @@ fn stack_two_chunk() {
     assert!(capacity < capacity_2);
 
     unsafe {
-        let current_footer = stack.current_footer.get().as_ref();
+        let current_footer = stack.current_footer.as_ref();
         assert!(!current_footer.is_dead());
         assert!(!current_footer.prev.get().as_ref().is_dead());
         assert!(current_footer.next.get().as_ref().is_dead());
@@ -112,7 +109,7 @@ fn stack_two_chunk() {
     assert_eq!(stack.len(), capacity);
 
     unsafe {
-        let current_footer = stack.current_footer.get().as_ref();
+        let current_footer = stack.current_footer.as_ref();
         assert!(!current_footer.is_dead());
         assert!(!current_footer.prev.get().as_ref().is_dead());
         assert!(current_footer.next.get().as_ref().is_dead());
@@ -132,7 +129,7 @@ fn stack_two_chunk() {
     assert_eq!(stack.len(), 0);
 
     unsafe {
-        let current_footer = stack.current_footer.get().as_ref();
+        let current_footer = stack.current_footer.as_ref();
         assert!(!current_footer.is_dead());
         assert!(current_footer.prev.get().as_ref().is_dead());
         assert!(current_footer.next.get().as_ref().is_dead());
