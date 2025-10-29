@@ -55,7 +55,11 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
     /// allocating.
     #[inline]
     pub const fn capacity(&self) -> usize {
-        self.capacity
+        if Self::ELEMENT_SIZE == 0 {
+            usize::MAX
+        } else {
+            self.capacity
+        }
     }
 
     /// Returns the number of elements in the vector, also referred to as its ‘length’.
@@ -126,8 +130,12 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
     pub fn pop(&mut self) -> Option<T> {
         unsafe {
             if let Some(element_ptr) = self.dealloc_element() {
-                self.length -= 1;
-                Some(ptr::read(element_ptr))
+                if Self::ELEMENT_SIZE == 0 && self.length == 0 {
+                    None
+                } else {
+                    self.length -= 1;
+                    Some(ptr::read(element_ptr))
+                }
             } else {
                 None
             }
@@ -473,8 +481,9 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
 
         let ptr = current_footer.ptr.get().as_ptr() as *mut T;
         let end = current_footer_ptr.as_ptr() as *mut T;
+        let capacity = end as usize - ptr as usize;
 
-        if ptr == end {
+        if capacity < Self::ELEMENT_SIZE {
             return None;
         }
 

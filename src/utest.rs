@@ -223,3 +223,40 @@ fn stack_three_chunks() {
         assert!(next_footer.next.get().as_ref().is_dead());
     }
 }
+
+#[test]
+fn zero_sized_element() {
+    let mut stack = Stack::<()>::default();
+    assert_eq!(stack.capacity(), usize::MAX);
+    assert_eq!(stack.len(), 0);
+
+    const COUNT: usize = 200;
+    for i in 0..COUNT {
+        assert_eq!(stack.len(), i);
+        stack.push(());
+        assert_eq!(stack.capacity(), usize::MAX);
+    }
+
+    unsafe {
+        let current_footer = stack.current_footer.as_ref();
+        assert!(current_footer.is_dead());
+        assert!(current_footer.prev.get().as_ref().is_dead());
+        assert!(current_footer.next.get().as_ref().is_dead());
+    }
+
+    for i in (0..COUNT).rev() {
+        assert_eq!(stack.pop(), Some(()));
+        assert_eq!(stack.len(), i);
+        assert_eq!(stack.capacity(), usize::MAX);
+    }
+    assert_eq!(stack.pop(), None);
+    assert_eq!(stack.len(), 0);
+    assert_eq!(stack.capacity(), usize::MAX);
+
+    unsafe {
+        let current_footer = stack.current_footer.as_ref();
+        assert!(current_footer.is_dead());
+        assert!(current_footer.prev.get().as_ref().is_dead());
+        assert!(current_footer.next.get().as_ref().is_dead());
+    }
+}

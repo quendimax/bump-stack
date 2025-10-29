@@ -9,6 +9,10 @@ fn stack_ctor() {
     let s = Stack::<i32>::default();
     assert_eq!(s.capacity(), 0);
     assert_eq!(s.len(), 0);
+
+    let s = Stack::<()>::default();
+    assert_eq!(s.capacity(), usize::MAX);
+    assert_eq!(s.len(), 0);
 }
 
 #[test]
