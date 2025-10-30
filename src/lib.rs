@@ -11,7 +11,7 @@ use core::mem;
 use core::ptr::{self, NonNull};
 
 #[derive(Debug)]
-pub struct Stack<T, const MIN_ALIGN: usize = 1> {
+pub struct Stack<T> {
     /// The current chunk we are bump allocating within.
     ///
     /// Its `next` link can point to the dead chunk, or to the cached chunk.
@@ -30,7 +30,7 @@ pub struct Stack<T, const MIN_ALIGN: usize = 1> {
 }
 
 // Public API
-impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
+impl<T> Stack<T> {
     /// Constructs a new, empty `Stack<T>`.
     ///
     /// The stack will not allocate until elements are pushed onto it.
@@ -73,7 +73,7 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
     ///
     /// ```
     /// # use bump_stack::Stack;
-    /// let mut stk = Stack::<i32>::with_capacity(10);
+    /// let mut stk = Stack::with_capacity(10);
     ///
     /// // The stack contains no items, even though it has capacity for more
     /// assert_eq!(stk.len(), 0);
@@ -154,9 +154,8 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
     /// # Examples
     ///
     /// ```
-    /// use bump_stack::Stack;
-    ///
-    /// let mut s = Stack::<i32>::new();
+    /// # use bump_stack::Stack;
+    /// let mut s = Stack::new();
     /// assert!(s.is_empty());
     ///
     /// s.push(1);
@@ -234,7 +233,7 @@ impl<T> core::default::Default for Stack<T> {
     }
 }
 
-impl<T, const MIN_ALIGN: usize> core::ops::Drop for Stack<T, MIN_ALIGN> {
+impl<T> core::ops::Drop for Stack<T> {
     fn drop(&mut self) {
         while let Some(item) = self.pop() {
             drop(item);
@@ -244,7 +243,7 @@ impl<T, const MIN_ALIGN: usize> core::ops::Drop for Stack<T, MIN_ALIGN> {
             if !current_footer.is_dead() {
                 debug_assert!(current_footer.prev.get().as_ref().is_dead());
                 debug_assert!(current_footer.next.get().as_ref().is_dead());
-                self.dealloc_chunk(current_footer);
+                self.dealloc_chunk(self.current_footer);
             }
         }
     }
@@ -335,8 +334,10 @@ impl ChunkFooter {
     }
 }
 
+const MIN_ALIGN: usize = 1;
+
 // Constants
-impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
+impl<T> Stack<T> {
     /// Element alignment takes into account the `MIN_ALIGN`. It takes the maximum
     /// between `MIN_ALIGN` and `T`'s alignment.
     const ELEMENT_ALIGN: usize = {
@@ -354,8 +355,7 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
     /// It is expected that the footer alignment is equal or greater than the
     /// element alignment, because the footer address is expected to be a marker
     /// of the `(last + 1)`-th element.
-    const FOOTER_ALIGN: usize =
-        util::max(Layout::new::<ChunkFooter>().align(), Self::ELEMENT_ALIGN);
+    const FOOTER_ALIGN: usize = util::max(mem::align_of::<ChunkFooter>(), Self::ELEMENT_ALIGN);
 
     const FOOTER_SIZE: usize = mem::size_of::<ChunkFooter>();
 
@@ -398,7 +398,7 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
 }
 
 // Private API
-impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
+impl<T> Stack<T> {
     unsafe fn alloc_element(&mut self) -> NonNull<T> {
         if let Some(ptr) = self.try_alloc_element_fast() {
             ptr
@@ -519,23 +519,26 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
             }
         };
 
-        let new_start = new_chunk_ptr as usize;
-        let new_end = new_start + new_chunk_layout.size();
-        let new_footer_start = util::round_down_to(new_end - Self::FOOTER_SIZE, Self::FOOTER_ALIGN);
+        let new_start = new_chunk_ptr;
+        let new_end = new_start.wrapping_byte_add(new_chunk_layout.size());
+        let new_footer_start = new_end.wrapping_byte_sub(Self::FOOTER_SIZE);
+        let new_footer_start = util::round_mut_ptr_down_to(new_footer_start, Self::FOOTER_ALIGN);
 
-        debug_assert!(new_footer_start.is_multiple_of(Self::ELEMENT_ALIGN));
+        debug_assert!(new_start < new_footer_start);
+        debug_assert!(new_footer_start < new_end);
+        debug_assert!((new_footer_start as usize).is_multiple_of(Self::ELEMENT_ALIGN));
+
         let new_ptr = new_footer_start;
 
-        let new_chunk_capacity = (new_ptr - new_start) / Self::ELEMENT_SIZE;
-        self.capacity += new_chunk_capacity;
+        let new_chunk_cap_in_bytes = unsafe { new_ptr.offset_from(new_start) };
+        let new_chunk_cap_in_elements = new_chunk_cap_in_bytes as usize / Self::ELEMENT_SIZE;
+        self.capacity += new_chunk_cap_in_elements;
 
         unsafe {
-            let new_footer_ptr = ptr::with_exposed_provenance_mut::<ChunkFooter>(new_footer_start);
-            let new_start_ptr = ptr::with_exposed_provenance_mut::<u8>(new_start);
-            let new_ptr = ptr::with_exposed_provenance_mut::<u8>(new_ptr);
+            let new_footer_ptr = new_footer_start as *mut ChunkFooter;
 
             util::write_with(new_footer_ptr, || ChunkFooter {
-                data: NonNull::new_unchecked(new_start_ptr),
+                data: NonNull::new_unchecked(new_start),
                 ptr: Cell::new(NonNull::new_unchecked(new_ptr)),
                 layout: new_chunk_layout,
                 prev: Cell::new(DEAD_CHUNK.get()),
@@ -619,9 +622,9 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
                     self.current_footer = next_footer_ptr;
                     self.current_footer.as_ref().prev.set(prev_footer_ptr);
 
-                    self.dealloc_chunk(current_footer);
+                    self.dealloc_chunk(current_footer_ptr);
                 } else {
-                    self.dealloc_chunk(next_footer);
+                    self.dealloc_chunk(next_footer_ptr);
                 }
                 self.current_footer.as_ref().next.set(DEAD_CHUNK.get());
             }
@@ -640,8 +643,9 @@ impl<T, const MIN_ALIGN: usize> Stack<T, MIN_ALIGN> {
         }
     }
 
-    unsafe fn dealloc_chunk(&mut self, footer: &ChunkFooter) {
+    unsafe fn dealloc_chunk(&mut self, mut footer_ptr: NonNull<ChunkFooter>) {
         unsafe {
+            let footer = footer_ptr.as_mut();
             let chunk_capacity = footer.capacity() / Self::ELEMENT_SIZE;
             debug_assert!(chunk_capacity <= self.capacity());
             self.capacity -= chunk_capacity;

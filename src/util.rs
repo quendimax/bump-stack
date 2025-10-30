@@ -13,9 +13,27 @@ pub(crate) const fn min(a: usize, b: usize) -> usize {
 /// # Panics
 ///
 /// With debug assertions enabled, panics if `divisor` is not a power of two.
+#[allow(dead_code)]
 pub(crate) const fn round_down_to(n: usize, divisor: usize) -> usize {
     debug_assert!(divisor.is_power_of_two());
     n & !(divisor - 1)
+}
+
+/// Rounds `ptr` down to the nearest multiple of `divisor`.
+///
+/// # Panics
+///
+/// With debug assertions enabled, panics if `divisor` is not a power of two.
+pub(crate) fn round_mut_ptr_down_to<T>(ptr: *mut T, divisor: usize) -> *mut T {
+    debug_assert!(divisor.is_power_of_two());
+
+    let ptr_int = ptr as usize;
+    let new_ptr_int = ptr_int & !(divisor - 1);
+    let delta = ptr_int - new_ptr_int;
+
+    debug_assert!(delta < divisor);
+
+    ptr.wrapping_byte_sub(delta)
 }
 
 /// Returns the biggest power of two smaller than or equal to `n`.

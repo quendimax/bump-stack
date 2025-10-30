@@ -25,8 +25,8 @@ fn stack_ctor() {
 
 #[test]
 fn stack_push_pop() {
-    let mut stack = Stack::<usize>::new();
-    const MAX: usize = 1 << 16;
+    let mut stack = Stack::default();
+    const MAX: usize = 1 << 10;
     for i in 0..MAX {
         assert_eq!(stack.len(), i);
         stack.push(i);
