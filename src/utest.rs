@@ -260,3 +260,28 @@ fn zero_sized_element() {
         assert!(current_footer.next.get().as_ref().is_dead());
     }
 }
+
+#[test]
+fn stack_with_capacity() {
+    let stack = Stack::<i32>::with_capacity(0);
+    unsafe {
+        assert!(stack.current_footer.as_ref().is_dead());
+    }
+
+    let stack = Stack::<i32>::with_capacity(1);
+    unsafe {
+        let current_footer = stack.current_footer.as_ref();
+        assert!(!current_footer.is_dead());
+        assert!(current_footer.prev.get().as_ref().is_dead());
+        assert!(current_footer.next.get().as_ref().is_dead());
+    }
+
+    let stack = Stack::<usize>::with_capacity(1 << 20);
+    assert!(stack.capacity() >= 1 << 20);
+    unsafe {
+        let current_footer = stack.current_footer.as_ref();
+        assert!(!current_footer.is_dead());
+        assert!(current_footer.prev.get().as_ref().is_dead());
+        assert!(current_footer.next.get().as_ref().is_dead());
+    }
+}
