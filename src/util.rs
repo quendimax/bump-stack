@@ -29,11 +29,32 @@ pub(crate) fn round_mut_ptr_down_to<T>(ptr: *mut T, divisor: usize) -> *mut T {
 
     let ptr_int = ptr as usize;
     let new_ptr_int = ptr_int & !(divisor - 1);
+
+    debug_assert!(ptr_int >= new_ptr_int);
     let delta = ptr_int - new_ptr_int;
 
     debug_assert!(delta < divisor);
 
     ptr.wrapping_byte_sub(delta)
+}
+
+/// Rounds `ptr` up to the nearest multiple of `divisor`.
+///
+/// # Panics
+///
+/// With debug assertions enabled, panics if `divisor` is not a power of two.
+pub(crate) fn round_mut_ptr_up_to<T>(ptr: *mut T, divisor: usize) -> *mut T {
+    debug_assert!(divisor.is_power_of_two());
+
+    let ptr_int = ptr as usize;
+    let new_ptr_int = ptr_int.next_multiple_of(divisor);
+
+    debug_assert!(new_ptr_int >= ptr_int);
+    let delta = new_ptr_int - ptr_int;
+
+    debug_assert!(delta < divisor);
+
+    ptr.wrapping_byte_add(delta)
 }
 
 /// Returns the biggest power of two smaller than or equal to `n`.

@@ -14,13 +14,14 @@ fn stack_without_chunks() {
 #[test]
 fn stack_one_chunk() {
     type Stack = super::Stack<usize>;
+    const ELEMENT_SIZE: usize = super::Stack::<usize>::ELEMENT_SIZE;
     let mut stack = Stack::new();
     assert_eq!(stack.capacity(), 0);
     assert_eq!(stack.len(), 0);
 
     unsafe {
         assert!(stack.current_footer.as_ref().is_dead());
-        assert!(stack.current_footer.as_ref().is_empty());
+        assert!(stack.current_footer.as_ref().occupied() < ELEMENT_SIZE);
     }
 
     stack.push(0);
@@ -138,6 +139,7 @@ fn stack_two_chunks() {
 #[test]
 fn stack_three_chunks() {
     let mut stack = Stack::<Element>::new();
+    const ELEMENT_SIZE: usize = Stack::<Element>::ELEMENT_SIZE;
 
     stack.push(elem(0));
     let capacity_1 = stack.capacity();
@@ -181,7 +183,7 @@ fn stack_three_chunks() {
     unsafe {
         let current_footer = stack.current_footer.as_ref();
         assert!(!current_footer.is_dead());
-        assert!(current_footer.is_empty());
+        assert!(current_footer.occupied() < ELEMENT_SIZE);
         assert!(!current_footer.prev.get().as_ref().is_dead());
         assert!(current_footer.next.get().as_ref().is_dead());
     }
@@ -196,10 +198,10 @@ fn stack_three_chunks() {
     unsafe {
         let current_footer = stack.current_footer.as_ref();
         assert!(!current_footer.is_dead());
-        assert!(current_footer.is_empty());
+        assert!(current_footer.occupied() < ELEMENT_SIZE);
         assert!(!current_footer.prev.get().as_ref().is_dead());
         assert!(!current_footer.next.get().as_ref().is_dead());
-        assert!(current_footer.next.get().as_ref().is_empty());
+        assert!(current_footer.next.get().as_ref().occupied() < ELEMENT_SIZE);
     }
 
     for i in (0..capacity_1).rev() {
@@ -214,11 +216,11 @@ fn stack_three_chunks() {
     unsafe {
         let current_footer = stack.current_footer.as_ref();
         assert!(!current_footer.is_dead());
-        assert!(current_footer.is_empty());
+        assert!(current_footer.occupied() < ELEMENT_SIZE);
         assert!(current_footer.prev.get().as_ref().is_dead());
         let next_footer = current_footer.next.get().as_ref();
         assert!(!next_footer.is_dead());
-        assert!(next_footer.is_empty());
+        assert!(next_footer.occupied() < ELEMENT_SIZE);
         assert_eq!(next_footer.prev.get(), stack.current_footer);
         assert!(next_footer.next.get().as_ref().is_dead());
     }
