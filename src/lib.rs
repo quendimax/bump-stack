@@ -18,13 +18,13 @@ pub struct Stack<T> {
     ///
     /// Its `prev` link can point to the dead chunk or to the earlier allocated
     /// chunk.
-    current_footer: NonNull<ChunkFooter>,
+    current_footer: Cell<NonNull<ChunkFooter>>,
 
     /// The capacity of the stack in elements.
-    capacity: usize,
+    capacity: Cell<usize>,
 
     /// The number of elements currently in the stack.
-    length: usize,
+    length: Cell<usize>,
 
     _phantom: PhantomData<T>,
 }
@@ -44,9 +44,9 @@ impl<T> Stack<T> {
     /// ```
     pub const fn new() -> Self {
         Self {
-            current_footer: DEAD_CHUNK.get(),
-            capacity: 0,
-            length: 0,
+            current_footer: Cell::new(DEAD_CHUNK.get()),
+            capacity: Cell::new(0),
+            length: Cell::new(0),
             _phantom: PhantomData,
         }
     }
@@ -97,12 +97,12 @@ impl<T> Stack<T> {
     /// assert_eq!(stk_units.capacity(), usize::MAX);
     /// ```
     pub fn with_capacity(capacity: usize) -> Self {
-        let mut stack = Self::new();
-        debug_assert!(unsafe { stack.current_footer.as_ref().is_dead() });
+        let stack = Self::new();
+        debug_assert!(unsafe { stack.current_footer.get().as_ref().is_dead() });
         if capacity != 0 && Self::ELEMENT_SIZE != 0 {
             let chunk_size = Self::chunk_size_for(capacity);
             let footer = unsafe { stack.alloc_chunk(chunk_size) };
-            stack.current_footer = footer;
+            stack.current_footer.set(footer);
         }
         stack
     }
@@ -114,7 +114,7 @@ impl<T> Stack<T> {
         if Self::ELEMENT_SIZE == 0 {
             usize::MAX
         } else {
-            self.capacity
+            self.capacity.get()
         }
     }
 
@@ -146,7 +146,7 @@ impl<T> Stack<T> {
     /// ```
     #[inline]
     pub const fn len(&self) -> usize {
-        self.length
+        self.length.get()
     }
 
     /// Returns `true` if the stack contains no elements.
@@ -191,12 +191,12 @@ impl<T> Stack<T> {
     /// by two and allocate it again until it reaches the minimum capacity. If
     /// it does, it panics.
     #[inline]
-    pub fn push(&mut self, value: T) {
+    pub fn push(&self, value: T) {
         self.push_with(|| value);
     }
 
     #[inline(always)]
-    pub fn push_with<F>(&mut self, f: F)
+    pub fn push_with<F>(&self, f: F)
     where
         F: FnOnce() -> T,
     {
@@ -204,16 +204,16 @@ impl<T> Stack<T> {
             let p = self.alloc_element();
             util::write_with(p.as_ptr(), f);
         }
-        self.length += 1;
+        self.length.update(|len| len + 1);
     }
 
     pub fn pop(&mut self) -> Option<T> {
         unsafe {
             if let Some(element_ptr) = self.dealloc_element() {
-                if Self::ELEMENT_SIZE == 0 && self.length == 0 {
+                if Self::ELEMENT_SIZE == 0 && self.length.get() == 0 {
                     None
                 } else {
-                    self.length -= 1;
+                    self.length.update(|len| len - 1);
                     Some(ptr::read(element_ptr.as_ptr()))
                 }
             } else {
@@ -239,11 +239,11 @@ impl<T> core::ops::Drop for Stack<T> {
             drop(item);
         }
         unsafe {
-            let current_footer = self.current_footer.as_ref();
+            let current_footer = self.current_footer.get().as_ref();
             if !current_footer.is_dead() {
                 debug_assert!(current_footer.prev.get().as_ref().is_dead());
                 debug_assert!(current_footer.next.get().as_ref().is_dead());
-                self.dealloc_chunk(self.current_footer);
+                self.dealloc_chunk(self.current_footer.get());
             }
         }
     }
@@ -275,6 +275,42 @@ struct ChunkFooter {
     next: Cell<NonNull<ChunkFooter>>,
 }
 
+impl ChunkFooter {
+    /// Returns a non-null pointer to the chunk footer.
+    fn get(&self) -> NonNull<Self> {
+        NonNull::from(self)
+    }
+
+    /// This is the `DEAD_CHUNK` chunk.
+    fn is_dead(&self) -> bool {
+        ptr::eq(self, &DEAD_CHUNK.0)
+    }
+
+    /// Amount of free bytes in the chunk.
+    fn remains(&self) -> usize {
+        let end = self.get().as_ptr() as usize;
+        let ptr = self.ptr.get().as_ptr() as usize;
+        debug_assert!(ptr <= end);
+        end - ptr
+    }
+
+    /// Amount of occupied bytes in the chunk.
+    fn occupied(&self) -> usize {
+        let start = self.data.as_ptr() as usize;
+        let ptr = self.ptr.get().as_ptr() as usize;
+        debug_assert!(start <= ptr);
+        ptr - start
+    }
+
+    /// The capacity of the chunk in bytes.
+    fn capacity(&self) -> usize {
+        let end = self.get().as_ptr() as usize;
+        let start = self.data.as_ptr() as usize;
+        debug_assert!(start < end);
+        end - start
+    }
+}
+
 #[repr(transparent)]
 struct DeadChunkFooter(ChunkFooter);
 
@@ -294,42 +330,6 @@ static DEAD_CHUNK: DeadChunkFooter = DeadChunkFooter(ChunkFooter {
     prev: Cell::new(DEAD_CHUNK.get()),
     next: Cell::new(DEAD_CHUNK.get()),
 });
-
-impl ChunkFooter {
-    /// Returns a non-null pointer to the chunk footer.
-    fn get(&self) -> NonNull<Self> {
-        NonNull::from(self)
-    }
-
-    /// This is the `DEAD_CHUNK` chunk.
-    fn is_dead(&self) -> bool {
-        ptr::eq(self, &DEAD_CHUNK.0)
-    }
-
-    /// Amount of free bytes in the chunk.
-    fn remains(&self) -> usize {
-        let end = self as *const ChunkFooter as usize;
-        let ptr = self.ptr.get().as_ptr() as usize;
-        debug_assert!(ptr <= end);
-        end - ptr
-    }
-
-    /// Amount of occupied bytes in the chunk.
-    fn occupied(&self) -> usize {
-        let start = self.data.as_ptr() as usize;
-        let ptr = self.ptr.get().as_ptr() as usize;
-        debug_assert!(start <= ptr);
-        ptr - start
-    }
-
-    /// The capacity of the chunk in bytes.
-    fn capacity(&self) -> usize {
-        let end = self as *const Self as usize;
-        let start = self.data.as_ptr() as usize;
-        debug_assert!(start < end);
-        end - start
-    }
-}
 
 /// Maximum typical overhead per allocation imposed by allocators.
 const ALLOC_OVERHEAD: usize = 16;
@@ -407,7 +407,7 @@ impl<T> Stack<T> {
 
 // Private API
 impl<T> Stack<T> {
-    unsafe fn alloc_element(&mut self) -> NonNull<T> {
+    unsafe fn alloc_element(&self) -> NonNull<T> {
         if let Some(ptr) = self.alloc_element_fast() {
             ptr
         } else {
@@ -416,10 +416,10 @@ impl<T> Stack<T> {
     }
 
     fn alloc_element_fast(&self) -> Option<NonNull<T>> {
-        let current_footer = unsafe { self.current_footer.as_ref() };
+        let current_footer = unsafe { self.current_footer.get().as_ref() };
 
         let ptr = current_footer.ptr.get().as_ptr();
-        let end = self.current_footer.as_ptr() as *mut u8;
+        let end = current_footer.get().cast().as_ptr();
         debug_assert!(ptr <= end);
         let capacity = end as usize - ptr as usize;
 
@@ -443,9 +443,9 @@ impl<T> Stack<T> {
     }
 
     // Should be run only if the current chunk is full
-    unsafe fn alloc_element_slow(&mut self) -> NonNull<T> {
+    unsafe fn alloc_element_slow(&self) -> NonNull<T> {
         unsafe {
-            let current_footer = self.current_footer.as_ref();
+            let current_footer = self.current_footer.get().as_ref();
 
             debug_assert!(Self::chunk_is_full(current_footer));
 
@@ -456,7 +456,7 @@ impl<T> Stack<T> {
                 debug_assert!(current_footer.next.get().as_ref().is_dead());
 
                 let new_footer_ptr = self.alloc_chunk(Self::CHUNK_FIRST_SIZE);
-                self.current_footer = new_footer_ptr;
+                self.current_footer.set(new_footer_ptr);
             } else {
                 // at least the current chunk is not dead
 
@@ -481,13 +481,13 @@ impl<T> Stack<T> {
                     let new_footer = new_footer_ptr.as_ref();
 
                     current_footer.next.set(new_footer_ptr);
-                    new_footer.prev.set(self.current_footer);
+                    new_footer.prev.set(self.current_footer.get());
 
-                    self.current_footer = new_footer_ptr;
+                    self.current_footer.set(new_footer_ptr);
                 } else {
                     // there is a next empty chunk, so make it the current chunk
                     debug_assert!(Self::chunk_is_empty(next_footer));
-                    self.current_footer = next_footer_ptr;
+                    self.current_footer.set(next_footer_ptr);
                 }
             }
 
@@ -495,7 +495,7 @@ impl<T> Stack<T> {
         }
     }
 
-    unsafe fn alloc_chunk(&mut self, chunk_size: usize) -> NonNull<ChunkFooter> {
+    unsafe fn alloc_chunk(&self, chunk_size: usize) -> NonNull<ChunkFooter> {
         debug_assert!((chunk_size + ALLOC_OVERHEAD).is_power_of_two());
         debug_assert!(chunk_size <= Self::CHUNK_MAX_SIZE);
 
@@ -536,7 +536,7 @@ impl<T> Stack<T> {
 
         let new_chunk_cap_in_bytes = new_footer_start as usize - new_ptr as usize;
         let new_chunk_cap_in_elements = new_chunk_cap_in_bytes as usize / Self::ELEMENT_SIZE;
-        self.capacity += new_chunk_cap_in_elements;
+        self.capacity.update(|cap| cap + new_chunk_cap_in_elements);
 
         unsafe {
             let new_footer_ptr = new_footer_start as *mut ChunkFooter;
@@ -564,7 +564,7 @@ impl<T> Stack<T> {
     }
 
     unsafe fn dealloc_element_fast(&mut self) -> Option<NonNull<T>> {
-        let current_footer_ptr = self.current_footer;
+        let current_footer_ptr = self.current_footer.get();
         let current_footer = unsafe { current_footer_ptr.as_ref() };
 
         let start = current_footer.data.as_ptr();
@@ -596,7 +596,7 @@ impl<T> Stack<T> {
 
     unsafe fn dealloc_element_slow(&mut self) -> Option<NonNull<T>> {
         unsafe {
-            let current_footer_ptr = self.current_footer;
+            let current_footer_ptr = self.current_footer.get();
             let current_footer = current_footer_ptr.as_ref();
 
             let next_footer_ptr = current_footer.next.get();
@@ -618,14 +618,18 @@ impl<T> Stack<T> {
                 if current_footer.layout.size() < next_footer.layout.size() {
                     debug_assert!(next_footer.next.get().as_ref().is_dead());
 
-                    self.current_footer = next_footer_ptr;
-                    self.current_footer.as_ref().prev.set(prev_footer_ptr);
+                    next_footer.prev.set(prev_footer_ptr);
+                    self.current_footer.set(next_footer_ptr);
 
                     self.dealloc_chunk(current_footer_ptr);
                 } else {
                     self.dealloc_chunk(next_footer_ptr);
                 }
-                self.current_footer.as_ref().next.set(DEAD_CHUNK.get());
+                self.current_footer
+                    .get()
+                    .as_ref()
+                    .next
+                    .set(DEAD_CHUNK.get());
             }
 
             if prev_footer.is_dead() {
@@ -634,8 +638,8 @@ impl<T> Stack<T> {
                 // check if prev_footer is full
                 debug_assert!(Self::chunk_is_full(prev_footer));
 
-                prev_footer.next.set(self.current_footer);
-                self.current_footer = prev_footer_ptr;
+                prev_footer.next.set(self.current_footer.get());
+                self.current_footer.set(prev_footer_ptr);
 
                 self.dealloc_element_fast()
             }
@@ -647,7 +651,7 @@ impl<T> Stack<T> {
             let footer = footer_ptr.as_mut();
             let chunk_capacity = footer.capacity() / Self::ELEMENT_SIZE;
             debug_assert!(chunk_capacity <= self.capacity());
-            self.capacity -= chunk_capacity;
+            self.capacity.update(|cap| cap - chunk_capacity);
             debug_assert!(self.len() <= self.capacity());
             dealloc(footer.data.as_ptr(), footer.layout);
         }
