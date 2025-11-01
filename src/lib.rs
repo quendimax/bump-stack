@@ -287,23 +287,20 @@ impl DeadChunkFooter {
 }
 
 // Empty chunk that contains only its footer.
-static DEAD_CHUNK: DeadChunkFooter = DeadChunkFooter(unsafe {
-    ChunkFooter {
-        data: NonNull::new_unchecked(&DEAD_CHUNK as *const DeadChunkFooter as *mut u8),
-        ptr: Cell::new(NonNull::new_unchecked(
-            &DEAD_CHUNK as *const DeadChunkFooter as *mut u8,
-        )),
-        layout: Layout::new::<ChunkFooter>(),
-        prev: Cell::new(NonNull::new_unchecked(
-            &DEAD_CHUNK as *const DeadChunkFooter as *mut ChunkFooter,
-        )),
-        next: Cell::new(NonNull::new_unchecked(
-            &DEAD_CHUNK as *const DeadChunkFooter as *mut ChunkFooter,
-        )),
-    }
+static DEAD_CHUNK: DeadChunkFooter = DeadChunkFooter(ChunkFooter {
+    data: DEAD_CHUNK.get().cast(),
+    ptr: Cell::new(DEAD_CHUNK.get().cast()),
+    layout: Layout::new::<ChunkFooter>(),
+    prev: Cell::new(DEAD_CHUNK.get()),
+    next: Cell::new(DEAD_CHUNK.get()),
 });
 
 impl ChunkFooter {
+    /// Returns a non-null pointer to the chunk footer.
+    fn get(&self) -> NonNull<Self> {
+        NonNull::from(self)
+    }
+
     /// This is the `DEAD_CHUNK` chunk.
     fn is_dead(&self) -> bool {
         ptr::eq(self, &DEAD_CHUNK.0)
