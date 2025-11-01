@@ -309,9 +309,7 @@ impl ChunkFooter {
         ptr::eq(self, &DEAD_CHUNK.0)
     }
 
-    /// Amount of unoccupied bytes in the chunk.
-    ///
-    /// For a full chunk, it can be in the range of `0..ELEMENT_SIZE`.
+    /// Amount of free bytes in the chunk.
     fn remains(&self) -> usize {
         let end = self as *const ChunkFooter as usize;
         let ptr = self.ptr.get().as_ptr() as usize;
@@ -320,8 +318,6 @@ impl ChunkFooter {
     }
 
     /// Amount of occupied bytes in the chunk.
-    ///
-    /// For an empty chunk, it can be in the range of `0..ELEMENT_SIZE`.
     fn occupied(&self) -> usize {
         let start = self.data.as_ptr() as usize;
         let ptr = self.ptr.get().as_ptr() as usize;
@@ -400,6 +396,16 @@ impl<T> Stack<T> {
 
         chunk_size.next_power_of_two() - ALLOC_OVERHEAD
     }
+
+    /// Checks if the chunk has no elements.
+    fn chunk_is_empty(chunk_footer: &ChunkFooter) -> bool {
+        chunk_footer.occupied() < Self::ELEMENT_SIZE
+    }
+
+    /// Checks if the chunk has maximum amount of elements.
+    fn chunk_is_full(chunk_footer: &ChunkFooter) -> bool {
+        chunk_footer.remains() < Self::ELEMENT_SIZE
+    }
 }
 
 // Private API
@@ -444,7 +450,7 @@ impl<T> Stack<T> {
         unsafe {
             let current_footer = self.current_footer.as_ref();
 
-            debug_assert!(current_footer.remains() < Self::ELEMENT_SIZE);
+            debug_assert!(Self::chunk_is_full(current_footer));
 
             if current_footer.is_dead() {
                 // this is initial state without allocated chunks at all
@@ -483,7 +489,7 @@ impl<T> Stack<T> {
                     self.current_footer = new_footer_ptr;
                 } else {
                     // there is a next empty chunk, so make it the current chunk
-                    debug_assert!(next_footer.occupied() < Self::ELEMENT_SIZE);
+                    debug_assert!(Self::chunk_is_empty(next_footer));
                     self.current_footer = next_footer_ptr;
                 }
             }
@@ -608,8 +614,8 @@ impl<T> Stack<T> {
                 return None;
             }
 
-            debug_assert!(current_footer.occupied() < Self::ELEMENT_SIZE);
-            debug_assert!(next_footer.occupied() < Self::ELEMENT_SIZE);
+            debug_assert!(Self::chunk_is_empty(current_footer));
+            debug_assert!(Self::chunk_is_empty(next_footer));
 
             if !next_footer.is_dead() {
                 if current_footer.layout.size() < next_footer.layout.size() {
@@ -629,7 +635,7 @@ impl<T> Stack<T> {
                 None
             } else {
                 // check if prev_footer is full
-                debug_assert!(prev_footer.remains() < Self::ELEMENT_SIZE);
+                debug_assert!(Self::chunk_is_full(prev_footer));
 
                 prev_footer.next.set(self.current_footer);
                 self.current_footer = prev_footer_ptr;
