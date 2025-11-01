@@ -81,14 +81,14 @@ fn stack_two_chunks() {
     let mut stack = Stack::<Element>::new();
 
     stack.push(elem(0));
-    let capacity = stack.capacity();
+    let capacity_1 = stack.capacity();
 
-    for i in 1..capacity + 1 {
+    for i in 1..capacity_1 + 1 {
         stack.push(elem(i));
     }
 
-    let capacity_2 = stack.capacity();
-    assert!(capacity < capacity_2);
+    let capacity_12 = stack.capacity();
+    assert!(capacity_1 < capacity_12);
 
     unsafe {
         let current_footer = stack.current_footer.get().as_ref();
@@ -97,19 +97,19 @@ fn stack_two_chunks() {
         assert!(current_footer.next.get().as_ref().is_dead());
     }
 
-    for i in capacity + 1..capacity_2 {
+    for i in capacity_1 + 1..capacity_12 {
         stack.push(elem(i));
     }
 
-    assert_eq!(stack.capacity(), capacity_2);
-    assert_eq!(stack.len(), capacity_2);
+    assert_eq!(stack.capacity(), capacity_12);
+    assert_eq!(stack.len(), capacity_12);
 
-    for i in (capacity..capacity_2).rev() {
+    for i in (capacity_1..capacity_12).rev() {
         assert_eq!(stack.pop(), Some(elem(i)));
     }
 
-    assert_eq!(stack.capacity(), capacity_2);
-    assert_eq!(stack.len(), capacity);
+    assert_eq!(stack.capacity(), capacity_12);
+    assert_eq!(stack.len(), capacity_1);
 
     unsafe {
         let current_footer = stack.current_footer.get().as_ref();
@@ -118,17 +118,17 @@ fn stack_two_chunks() {
         assert!(current_footer.next.get().as_ref().is_dead());
     }
 
-    for i in (0..capacity).rev() {
+    for i in (0..capacity_1).rev() {
         assert_eq!(stack.pop(), Some(elem(i)));
     }
 
-    assert_eq!(stack.capacity(), capacity_2);
+    assert_eq!(stack.capacity(), capacity_12);
     assert_eq!(stack.len(), 0);
 
     stack.pop();
 
     // should stay the biggest chunk
-    assert_eq!(stack.capacity(), capacity_2 - capacity);
+    assert_eq!(stack.capacity(), capacity_12 - capacity_1);
     assert_eq!(stack.len(), 0);
 
     unsafe {
@@ -190,6 +190,19 @@ fn stack_three_chunks() {
         assert!(!current_footer.prev.get().as_ref().is_dead());
         assert!(current_footer.next.get().as_ref().is_dead());
     }
+
+    assert_eq!(stack.pop(), Some(elem(capacity_12 - 1)));
+    stack.push(elem(capacity_12 - 1));
+    stack.push(elem(capacity_12));
+
+    unsafe {
+        let current_footer = stack.current_footer.get().as_ref();
+        assert!(!current_footer.is_dead());
+        assert!(!current_footer.prev.get().as_ref().is_dead());
+        assert!(current_footer.next.get().as_ref().is_dead());
+    }
+
+    assert_eq!(stack.pop(), Some(elem(capacity_12)));
 
     for i in (capacity_1..capacity_12).rev() {
         assert_eq!(stack.pop(), Some(elem(i)));

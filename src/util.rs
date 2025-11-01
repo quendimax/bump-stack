@@ -1,11 +1,24 @@
 //! Some helper functions for bump-stack.
 
+/// Replacement for standard `max` method until its constancy is stabilized.
 pub(crate) const fn max(a: usize, b: usize) -> usize {
     if a > b { a } else { b }
 }
 
+/// Replacement for standard `min` method until its constancy is stabilized.
 pub(crate) const fn min(a: usize, b: usize) -> usize {
     if a < b { a } else { b }
+}
+
+/// Checks if `value` is aligned to `alignment`.
+pub(crate) const fn is_aligned_to(value: usize, alignment: usize) -> bool {
+    value.is_multiple_of(alignment)
+}
+
+/// Checks if `value` is aligned to `alignment`.
+pub(crate) fn ptr_is_aligned_to<T>(ptr: *mut T, alignment: usize) -> bool {
+    let value = ptr as usize;
+    value.is_multiple_of(alignment)
 }
 
 /// Rounds `n` down to the nearest multiple of `divisor`.
@@ -13,7 +26,6 @@ pub(crate) const fn min(a: usize, b: usize) -> usize {
 /// # Panics
 ///
 /// With debug assertions enabled, panics if `divisor` is not a power of two.
-#[allow(dead_code)]
 pub(crate) const fn round_down_to(n: usize, divisor: usize) -> usize {
     debug_assert!(divisor.is_power_of_two());
     n & !(divisor - 1)
@@ -28,7 +40,7 @@ pub(crate) fn round_mut_ptr_down_to<T>(ptr: *mut T, divisor: usize) -> *mut T {
     debug_assert!(divisor.is_power_of_two());
 
     let ptr_int = ptr as usize;
-    let new_ptr_int = ptr_int & !(divisor - 1);
+    let new_ptr_int = round_down_to(ptr_int, divisor);
 
     debug_assert!(ptr_int >= new_ptr_int);
     let delta = ptr_int - new_ptr_int;

@@ -386,7 +386,7 @@ impl<T> Stack<T> {
             elements_count = 2;
         }
         let mut chunk_size = elements_count * Self::ELEMENT_SIZE;
-        assert!(chunk_size.is_multiple_of(Self::ELEMENT_ALIGN));
+        assert!(util::is_aligned_to(chunk_size, Self::ELEMENT_ALIGN));
 
         let overhead = ALLOC_OVERHEAD + Self::FOOTER_SIZE;
         chunk_size += overhead.next_multiple_of(Self::FOOTER_ALIGN);
@@ -429,11 +429,7 @@ impl<T> Stack<T> {
 
         let new_ptr = ptr.wrapping_byte_add(Self::ELEMENT_SIZE);
 
-        debug_assert!(
-            (new_ptr as usize).is_multiple_of(Self::ELEMENT_ALIGN),
-            "new bump pointer {new_ptr:#p} should be aligned to the element alignment {:#x}",
-            Self::ELEMENT_ALIGN
-        );
+        debug_assert!(util::ptr_is_aligned_to(new_ptr, Self::ELEMENT_ALIGN));
 
         let new_ptr = unsafe { NonNull::new_unchecked(new_ptr) };
         current_footer.ptr.set(new_ptr);
@@ -532,7 +528,7 @@ impl<T> Stack<T> {
         debug_assert!(new_footer_start < new_end);
 
         let new_ptr = util::round_mut_ptr_up_to(new_start, Self::ELEMENT_ALIGN);
-        debug_assert!((new_ptr as usize).is_multiple_of(Self::ELEMENT_ALIGN));
+        debug_assert!(util::ptr_is_aligned_to(new_ptr, Self::ELEMENT_ALIGN));
 
         let new_chunk_cap_in_bytes = new_footer_start as usize - new_ptr as usize;
         let new_chunk_cap_in_elements = new_chunk_cap_in_bytes as usize / Self::ELEMENT_SIZE;
@@ -578,15 +574,8 @@ impl<T> Stack<T> {
 
         let new_ptr = ptr.wrapping_byte_sub(Self::ELEMENT_SIZE);
 
-        debug_assert!(
-            start <= new_ptr,
-            "new bump pointer {ptr:#p} should be less than or equal to end {start:#p}"
-        );
-        debug_assert!(
-            (new_ptr as usize).is_multiple_of(Self::ELEMENT_ALIGN),
-            "new bump pointer {new_ptr:#p} should be aligned to the element alignment {:#x}",
-            Self::ELEMENT_ALIGN
-        );
+        debug_assert!(start <= new_ptr);
+        debug_assert!(util::ptr_is_aligned_to(new_ptr, Self::ELEMENT_ALIGN));
 
         let new_ptr = unsafe { NonNull::new_unchecked(new_ptr) };
         current_footer.ptr.set(new_ptr);

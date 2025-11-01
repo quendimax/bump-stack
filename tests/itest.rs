@@ -36,4 +36,7 @@ fn stack_push_pop() {
     }
     assert_eq!(stack.len(), 0);
     assert!(stack.len() < stack.capacity());
+
+    let stack = Stack::default();
+    stack.push(42);
 }
