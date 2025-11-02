@@ -55,6 +55,7 @@ pub(crate) fn round_mut_ptr_down_to<T>(ptr: *mut T, divisor: usize) -> *mut T {
 /// # Panics
 ///
 /// With debug assertions enabled, panics if `divisor` is not a power of two.
+#[allow(dead_code)]
 pub(crate) fn round_mut_ptr_up_to<T>(ptr: *mut T, divisor: usize) -> *mut T {
     debug_assert!(divisor.is_power_of_two());
 

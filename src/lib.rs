@@ -7,7 +7,7 @@ extern crate alloc;
 use alloc::alloc::{Layout, alloc, dealloc, handle_alloc_error};
 use core::cell::Cell;
 use core::marker::PhantomData;
-use core::mem;
+use core::mem::{align_of, size_of};
 use core::ptr::{self, NonNull};
 
 #[derive(Debug)]
@@ -207,6 +207,7 @@ impl<T> Stack<T> {
         self.length.update(|len| len + 1);
     }
 
+    #[inline]
     pub fn pop(&mut self) -> Option<T> {
         unsafe {
             if let Some(element_ptr) = self.dealloc_element() {
@@ -294,20 +295,20 @@ impl ChunkFooter {
         end - ptr
     }
 
-    /// Amount of occupied bytes in the chunk.
-    fn occupied(&self) -> usize {
-        let start = self.data.as_ptr() as usize;
-        let ptr = self.ptr.get().as_ptr() as usize;
-        debug_assert!(start <= ptr);
-        ptr - start
-    }
-
     /// The capacity of the chunk in bytes.
     fn capacity(&self) -> usize {
         let end = self.get().as_ptr() as usize;
         let start = self.data.as_ptr() as usize;
         debug_assert!(start < end);
         end - start
+    }
+
+    /// Checks if the chunk is empty.
+    fn is_empty(&self) -> bool {
+        let start = self.data.as_ptr() as usize;
+        let ptr = self.ptr.get().as_ptr() as usize;
+        debug_assert!(start <= ptr);
+        start == ptr
     }
 }
 
@@ -337,14 +338,17 @@ const ALLOC_OVERHEAD: usize = 16;
 // Constants
 impl<T> Stack<T> {
     /// Element alignment
-    const ELEMENT_ALIGN: usize = mem::align_of::<T>();
+    const ELEMENT_ALIGN: usize = align_of::<T>();
 
     /// Element size
-    const ELEMENT_SIZE: usize = mem::size_of::<T>();
+    const ELEMENT_SIZE: usize = size_of::<T>();
 
-    const FOOTER_ALIGN: usize = mem::align_of::<ChunkFooter>();
+    /// Footer alignment is maximum of element alignment and footer alignment
+    /// itself. It allows to use footer's address as the `end` of elements array
+    /// within the chunk.
+    const FOOTER_ALIGN: usize = util::max(align_of::<ChunkFooter>(), Self::ELEMENT_ALIGN);
 
-    const FOOTER_SIZE: usize = mem::size_of::<ChunkFooter>();
+    const FOOTER_SIZE: usize = size_of::<ChunkFooter>();
 
     /// Chunk alignment is at least the maximum of element alignment and 8.
     const CHUNK_ALIGN: usize = util::max(Self::ELEMENT_ALIGN, 8);
@@ -394,11 +398,6 @@ impl<T> Stack<T> {
         chunk_size.next_power_of_two() - ALLOC_OVERHEAD
     }
 
-    /// Checks if the chunk has no elements.
-    fn chunk_is_empty(chunk_footer: &ChunkFooter) -> bool {
-        chunk_footer.occupied() < Self::ELEMENT_SIZE
-    }
-
     /// Checks if the chunk has maximum amount of elements.
     fn chunk_is_full(chunk_footer: &ChunkFooter) -> bool {
         chunk_footer.remains() < Self::ELEMENT_SIZE
@@ -418,15 +417,11 @@ impl<T> Stack<T> {
     fn alloc_element_fast(&self) -> Option<NonNull<T>> {
         let current_footer = unsafe { self.current_footer.get().as_ref() };
 
-        let ptr = current_footer.ptr.get().as_ptr();
-        let end = current_footer.get().cast().as_ptr();
-        debug_assert!(ptr <= end);
-        let capacity = end as usize - ptr as usize;
-
-        if capacity < Self::ELEMENT_SIZE {
+        if current_footer.remains() < Self::ELEMENT_SIZE {
             return None;
         }
 
+        let ptr = current_footer.ptr.get().as_ptr();
         let new_ptr = ptr.wrapping_byte_add(Self::ELEMENT_SIZE);
 
         debug_assert!(util::ptr_is_aligned_to(new_ptr, Self::ELEMENT_ALIGN));
@@ -482,7 +477,7 @@ impl<T> Stack<T> {
                     self.current_footer.set(new_footer_ptr);
                 } else {
                     // there is a next empty chunk, so make it the current chunk
-                    debug_assert!(Self::chunk_is_empty(next_footer));
+                    debug_assert!(next_footer.is_empty());
                     self.current_footer.set(next_footer_ptr);
                 }
             }
@@ -510,9 +505,14 @@ impl<T> Stack<T> {
 
             let new_chunk_ptr = unsafe { alloc(new_chunk_layout) };
             if !new_chunk_ptr.is_null() {
+                assert!(
+                    util::ptr_is_aligned_to(new_chunk_ptr, Self::ELEMENT_ALIGN),
+                    "it is expected that the new chunk is aligned to the element alignment"
+                );
                 break (new_chunk_ptr, new_chunk_layout);
             }
 
+            // if couldn't get a new chunk, try to shrink the chunk size by half
             new_chunk_size = ((new_chunk_size + ALLOC_OVERHEAD) >> 1) - ALLOC_OVERHEAD;
             if new_chunk_size < Self::CHUNK_MIN_SIZE {
                 handle_alloc_error(new_chunk_layout);
@@ -523,16 +523,15 @@ impl<T> Stack<T> {
         let new_end = new_start.wrapping_byte_add(new_chunk_layout.size());
         let new_footer_start = new_end.wrapping_byte_sub(Self::FOOTER_SIZE);
         let new_footer_start = util::round_mut_ptr_down_to(new_footer_start, Self::FOOTER_ALIGN);
+        let new_ptr = new_start;
 
         debug_assert!(new_start < new_footer_start);
         debug_assert!(new_footer_start < new_end);
-
-        let new_ptr = util::round_mut_ptr_up_to(new_start, Self::ELEMENT_ALIGN);
         debug_assert!(util::ptr_is_aligned_to(new_ptr, Self::ELEMENT_ALIGN));
 
         let new_chunk_cap_in_bytes = new_footer_start as usize - new_ptr as usize;
-        let new_chunk_cap_in_elements = new_chunk_cap_in_bytes as usize / Self::ELEMENT_SIZE;
-        self.capacity.update(|cap| cap + new_chunk_cap_in_elements);
+        let new_chunk_capacity = new_chunk_cap_in_bytes as usize / Self::ELEMENT_SIZE;
+        self.capacity.update(|cap| cap + new_chunk_capacity);
 
         unsafe {
             let new_footer_ptr = new_footer_start as *mut ChunkFooter;
@@ -600,8 +599,8 @@ impl<T> Stack<T> {
                 return None;
             }
 
-            debug_assert!(Self::chunk_is_empty(current_footer));
-            debug_assert!(Self::chunk_is_empty(next_footer));
+            debug_assert!(current_footer.is_empty());
+            debug_assert!(next_footer.is_empty());
 
             if !next_footer.is_dead() {
                 if current_footer.layout.size() < next_footer.layout.size() {
