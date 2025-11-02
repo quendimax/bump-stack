@@ -1,5 +1,7 @@
 use super::*;
-use pretty_assertions::assert_eq;
+use core::mem::size_of;
+use pretty_assertions::{assert_eq, assert_ne};
+use util::const_assert;
 
 #[test]
 fn stack_without_chunks() {
@@ -34,7 +36,7 @@ fn stack_one_chunk() {
     for i in 1..capacity {
         unsafe {
             assert!(!stack.current_footer.get().as_ref().is_dead());
-            assert!(stack.current_footer.get().as_ref().remains() >= Stack::ELEMENT_SIZE);
+            assert!(!Stack::chunk_is_full(stack.current_footer.get().as_ref()));
         }
         stack.push(i);
 
@@ -45,7 +47,7 @@ fn stack_one_chunk() {
     unsafe {
         let current_footer = stack.current_footer.get().as_ref();
         assert!(!current_footer.is_dead());
-        assert!(current_footer.remains() < Stack::ELEMENT_SIZE);
+        assert!(Stack::chunk_is_full(current_footer));
         assert!(current_footer.prev.get().as_ref().is_dead());
         assert!(current_footer.next.get().as_ref().is_dead());
     }
@@ -299,5 +301,79 @@ fn stack_with_capacity() {
         assert!(!current_footer.is_dead());
         assert!(current_footer.prev.get().as_ref().is_dead());
         assert!(current_footer.next.get().as_ref().is_dead());
+    }
+}
+
+#[test]
+fn check_alignments() {
+    #[repr(C)]
+    #[repr(packed(1))]
+    struct T5Packed {
+        _m0: u32,
+        _m1: u8,
+    }
+    assert_eq!(size_of::<T5Packed>(), 5);
+
+    let stk = Stack::<T5Packed>::new();
+    stk.push(T5Packed { _m0: 0, _m1: 0 });
+
+    const_assert!(!Stack::<T5Packed>::FOOTER_IS_END);
+    assert_eq!(stk.capacity(), 89);
+    unsafe {
+        let footer = stk.current_footer.get().as_ref();
+        let end = footer
+            .data
+            .as_ptr()
+            .byte_add(stk.capacity() * size_of::<T5Packed>());
+        assert_ne!(end, footer.get().cast().as_ptr());
+    }
+
+    #[repr(align(16))]
+    struct T5 {
+        _m0: u32,
+        _m1: u8,
+    }
+    assert_eq!(size_of::<T5>(), 16);
+
+    let stk = Stack::<T5>::new();
+    stk.push(T5 { _m0: 0, _m1: 0 });
+
+    const_assert!(Stack::<T5>::FOOTER_IS_END);
+    assert_eq!(stk.capacity(), 28);
+    unsafe {
+        let footer = stk.current_footer.get().as_ref();
+        let end = footer
+            .data
+            .as_ptr()
+            .byte_add(stk.capacity() * size_of::<T5>());
+        assert_eq!(end, footer.get().cast().as_ptr());
+    }
+
+    let stk = Stack::<usize>::new();
+    stk.push(0);
+
+    const_assert!(Stack::<usize>::FOOTER_IS_END);
+    assert_eq!(stk.capacity(), 56);
+    unsafe {
+        let footer = stk.current_footer.get().as_ref();
+        let end = footer
+            .data
+            .as_ptr()
+            .byte_add(stk.capacity() * size_of::<usize>());
+        assert_eq!(end, footer.get().cast().as_ptr());
+    }
+
+    let stk = Stack::<u8>::new();
+    stk.push(0);
+
+    const_assert!(Stack::<u8>::FOOTER_IS_END);
+    assert_eq!(stk.capacity(), 448);
+    unsafe {
+        let footer = stk.current_footer.get().as_ref();
+        let end = footer
+            .data
+            .as_ptr()
+            .byte_add(stk.capacity() * size_of::<u8>());
+        assert_eq!(end, footer.get().cast().as_ptr());
     }
 }

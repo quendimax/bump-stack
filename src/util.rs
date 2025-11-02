@@ -36,16 +36,16 @@ pub(crate) const fn round_down_to(n: usize, divisor: usize) -> usize {
 /// # Panics
 ///
 /// With debug assertions enabled, panics if `divisor` is not a power of two.
-pub(crate) fn round_mut_ptr_down_to<T>(ptr: *mut T, divisor: usize) -> *mut T {
-    debug_assert!(divisor.is_power_of_two());
+pub(crate) fn round_mut_ptr_down_to<T>(ptr: *mut T, alignment: usize) -> *mut T {
+    debug_assert!(alignment.is_power_of_two());
 
     let ptr_int = ptr as usize;
-    let new_ptr_int = round_down_to(ptr_int, divisor);
+    let new_ptr_int = round_down_to(ptr_int, alignment);
 
     debug_assert!(ptr_int >= new_ptr_int);
     let delta = ptr_int - new_ptr_int;
 
-    debug_assert!(delta < divisor);
+    debug_assert!(delta < alignment);
 
     ptr.wrapping_byte_sub(delta)
 }
