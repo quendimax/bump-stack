@@ -20,6 +20,10 @@ pub struct Stack<T> {
     /// chunk.
     current_footer: Cell<NonNull<ChunkFooter>>,
 
+    /// The first chunk we allocated, or the dead chunk if we haven't allocated
+    /// anything yet.
+    first_footer: Cell<NonNull<ChunkFooter>>,
+
     /// The capacity of the stack in elements.
     capacity: Cell<usize>,
 
@@ -45,6 +49,7 @@ impl<T> Stack<T> {
     pub const fn new() -> Self {
         Self {
             current_footer: Cell::new(DEAD_CHUNK.get()),
+            first_footer: Cell::new(DEAD_CHUNK.get()),
             capacity: Cell::new(0),
             length: Cell::new(0),
             _phantom: PhantomData,
@@ -103,6 +108,7 @@ impl<T> Stack<T> {
             let chunk_size = Self::chunk_size_for(capacity);
             let footer = unsafe { stack.alloc_chunk(chunk_size) };
             stack.current_footer.set(footer);
+            stack.first_footer.set(footer);
         }
         stack
     }
@@ -463,16 +469,15 @@ impl<T> Stack<T> {
 
                 let new_footer_ptr = self.alloc_chunk(Self::CHUNK_FIRST_SIZE);
                 self.current_footer.set(new_footer_ptr);
+                self.first_footer.set(new_footer_ptr);
             } else {
                 // at least the current chunk is not dead
-
                 let next_footer_ptr = current_footer.next.get();
                 let next_footer = next_footer_ptr.as_ref();
 
                 if next_footer.is_dead() {
                     // the current chunk is single, so create a new one, and
                     // make it the current chunk.
-
                     let current_chunk_size = current_footer.layout.size();
                     let new_chunk_size = if current_chunk_size == Self::CHUNK_MAX_SIZE {
                         Self::CHUNK_MAX_SIZE
@@ -646,6 +651,7 @@ impl<T> Stack<T> {
             }
 
             if prev_footer.is_dead() {
+                self.first_footer.set(self.current_footer.get());
                 None
             } else {
                 // check if prev_footer is full
