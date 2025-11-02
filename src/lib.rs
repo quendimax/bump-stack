@@ -172,6 +172,105 @@ impl<T> Stack<T> {
         self.len() == 0
     }
 
+    /// Returns a reference to the first element of the stack, or `None` if it
+    /// is empty.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use bump_stack::Stack;
+    /// let mut s = Stack::new();
+    /// assert_eq!(None, s.first());
+    ///
+    /// s.push(42);
+    /// assert_eq!(Some(&42), s.first());
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn first(&self) -> Option<&T> {
+        if !self.is_empty() {
+            unsafe { Some(self.first_unchecked().as_mut()) }
+        } else {
+            None
+        }
+    }
+
+    /// Returns a mutable reference to the first element of the slice, or `None`
+    /// if it is empty.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use bump_stack::Stack;
+    /// let mut s = Stack::new();
+    /// assert_eq!(None, s.first_mut());
+    ///
+    /// s.push(1);
+    /// if let Some(first) = s.first_mut() {
+    ///     *first = 5;
+    /// }
+    /// assert_eq!(s.first(), Some(&5));
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn first_mut(&mut self) -> Option<&mut T> {
+        if !self.is_empty() {
+            unsafe { Some(self.first_unchecked().as_mut()) }
+        } else {
+            None
+        }
+    }
+
+    /// Returns the reference to last element of the stack, or `None` if it is
+    /// empty.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use bump_stack::Stack;
+    /// let mut stk = Stack::new();
+    /// assert_eq!(None, stk.last());
+    ///
+    /// stk.push(1);
+    /// assert_eq!(Some(&1), stk.last());
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn last(&self) -> Option<&T> {
+        if !self.is_empty() {
+            unsafe { Some(self.last_unchecked().as_ref()) }
+        } else {
+            None
+        }
+    }
+    /// Returns a mutable reference to the last item in the stack, or `None` if
+    /// it is empty.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use bump_stack::Stack;
+    /// let mut stk = Stack::new();
+    /// assert_eq!(None, stk.last_mut());
+    ///
+    /// stk.push(5);
+    /// assert_eq!(Some(&mut 5), stk.last_mut());
+    ///
+    /// if let Some(last) = stk.last_mut() {
+    ///     *last = 10;
+    /// }
+    /// assert_eq!(Some(&mut 10), stk.last_mut());
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn last_mut(&mut self) -> Option<&mut T> {
+        if !self.is_empty() {
+            unsafe { Some(self.last_unchecked().as_mut()) }
+        } else {
+            None
+        }
+    }
+
     /// Appends an element to the stack.
     ///
     /// # Panics
@@ -291,6 +390,14 @@ impl ChunkFooter {
     /// This is the `DEAD_CHUNK` chunk.
     fn is_dead(&self) -> bool {
         ptr::eq(self, &DEAD_CHUNK.0)
+    }
+
+    /// Returns the number of bytes occupied by the chunk.
+    fn occupied(&self) -> usize {
+        let start = self.data.as_ptr() as usize;
+        let ptr = self.ptr.get().as_ptr() as usize;
+        debug_assert!(start <= ptr);
+        ptr - start
     }
 
     /// The capacity of the chunk in bytes.
@@ -673,6 +780,35 @@ impl<T> Stack<T> {
             self.capacity.update(|cap| cap - chunk_capacity);
             debug_assert!(self.len() <= self.capacity());
             dealloc(footer.data.as_ptr(), footer.layout);
+        }
+    }
+
+    /// Returns a pointer to the first element of the stack.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the stack is not empty.
+    unsafe fn first_unchecked(&self) -> NonNull<T> {
+        unsafe {
+            let first_footer = self.first_footer.get().as_ref();
+            assert!(first_footer.occupied() >= Self::ELEMENT_SIZE);
+            first_footer.data.cast()
+        }
+    }
+
+    /// Returns a pointer to the last element of the stack.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the stack is not empty.
+    unsafe fn last_unchecked(&self) -> NonNull<T> {
+        unsafe {
+            let mut footer = self.current_footer.get().as_ref();
+            if footer.is_empty() {
+                footer = footer.prev.get().as_ref();
+            }
+            assert!(footer.occupied() >= Self::ELEMENT_SIZE);
+            footer.ptr.get().cast().sub(1)
         }
     }
 }
