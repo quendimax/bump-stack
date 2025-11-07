@@ -126,3 +126,49 @@ fn stack_last_mut() {
     stk.pop();
     assert_eq!(None, stk.last_mut());
 }
+
+#[test]
+fn stack_iter() {
+    let stk = Stack::new();
+    stk.push(0);
+    let capacity_1 = stk.capacity();
+    for i in 1..capacity_1 {
+        stk.push(i);
+    }
+    assert_eq!(stk.len(), capacity_1);
+
+    for (i, elem) in stk.iter().enumerate() {
+        assert_eq!(*elem, i);
+    }
+
+    stk.push(capacity_1);
+    let capacity_12 = stk.capacity();
+    for i in capacity_1 + 1..capacity_12 {
+        stk.push(i);
+    }
+    assert_eq!(stk.len(), capacity_12);
+
+    for (i, elem) in stk.iter().enumerate() {
+        assert_eq!(*elem, i);
+    }
+
+    // double the stack
+    let len_before = stk.len();
+    for elem in stk.iter() {
+        stk.push(*elem);
+    }
+    let len_after = stk.len();
+    assert_eq!(2 * len_before, len_after);
+}
+
+#[test]
+fn stack_iter_zst() {
+    let stk = Stack::new();
+    stk.push(());
+    stk.push(());
+    stk.push(());
+    stk.push(());
+
+    let count = stk.iter().fold(0, |count, _| count + 1);
+    assert_eq!(stk.len(), count);
+}

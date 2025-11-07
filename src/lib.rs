@@ -1,5 +1,6 @@
 #![no_std]
 
+mod iter;
 mod util;
 
 extern crate alloc;
@@ -327,6 +328,49 @@ impl<T> Stack<T> {
             }
         }
     }
+
+    /// Returns an iterator over the stack.
+    ///
+    /// The iterator yields all items from start to end.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use bump_stack::Stack;
+    /// let stk = Stack::new();
+    /// stk.push(1);
+    /// stk.push(2);
+    /// stk.push(4);
+    ///
+    /// let mut iterator = stk.iter();
+    ///
+    /// assert_eq!(iterator.next(), Some(&1));
+    /// assert_eq!(iterator.next(), Some(&2));
+    /// assert_eq!(iterator.next(), Some(&4));
+    /// assert_eq!(iterator.next(), None);
+    /// ```
+    ///
+    /// Since `Stack` allows to push new elements using immutable reference to
+    /// itself, you can push during iteration. But iteration is running over
+    /// elements existing at the moment of the iterator creating. It guarantees
+    /// that you won't get infinite loop.
+    ///
+    /// ```
+    /// # use bump_stack::Stack;
+    /// let stk = Stack::new();
+    /// stk.push(1);
+    /// stk.push(2);
+    /// stk.push(4);
+    ///
+    /// for elem in stk.iter() {
+    ///     stk.push(*elem)
+    /// }
+    /// assert_eq!(stk.len(), 6);
+    /// // TODO: add per element comparison
+    /// ```
+    pub fn iter(&self) -> impl core::iter::Iterator<Item = &T> {
+        iter::Iter::new(self)
+    }
 }
 
 impl<T> core::default::Default for Stack<T> {
@@ -492,6 +536,9 @@ impl<T> Stack<T> {
         assert!(size.is_power_of_two());
         size - ALLOC_OVERHEAD
     };
+
+    /// Is `true` if `T` is a zero-sized type.
+    const ELEMENT_IS_ZST: bool = Self::ELEMENT_SIZE == 0;
 
     /// Calculate chunk size big enough for the given number of elements. The
     /// chunk is a power of two minus an allocator overhead.
