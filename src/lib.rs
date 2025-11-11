@@ -583,7 +583,7 @@ impl<T> Stack<T> {
         if let Some(ptr) = self.alloc_element_fast() {
             ptr
         } else {
-            debug_assert_ne!(Self::ELEMENT_SIZE, 0, "slow alloc is impossible for ZST");
+            debug_assert!(!Self::ELEMENT_IS_ZST, "slow alloc is impossible for ZST");
             unsafe { self.alloc_element_slow() }
         }
     }

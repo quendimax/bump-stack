@@ -36,7 +36,7 @@ impl<'a, T> Iter<'a, T> {
             Self {
                 _stack: stack,
                 current_footer: current_footer.get(),
-                ptr_or_idx: core::ptr::null(),
+                ptr_or_idx: core::ptr::without_provenance(0),
                 end_or_len: core::ptr::without_provenance(stack.len()),
             }
         } else {
@@ -90,7 +90,7 @@ impl<'a, T> Iterator for Iter<'a, T> {
         if const { Stack::<T>::ELEMENT_IS_ZST } {
             if self.ptr_or_idx < self.end_or_len {
                 unsafe {
-                    self.ptr_or_idx = self.ptr_or_idx.byte_add(1);
+                    self.ptr_or_idx = self.ptr_or_idx.wrapping_byte_add(1);
                     Some(self.current_footer.cast().as_ref())
                 }
             } else {
@@ -113,7 +113,7 @@ impl<'a, T> Iterator for Iter<'a, T> {
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         if const { Stack::<T>::ELEMENT_IS_ZST } {
-            let remains = unsafe { self.end_or_len.byte_offset_from_unsigned(self.ptr_or_idx) };
+            let remains = self.end_or_len as usize - self.ptr_or_idx as usize;
             (remains, Some(remains))
         } else {
             (0, None)
@@ -126,7 +126,7 @@ impl<'a, T> Iterator for Iter<'a, T> {
         Self: Sized,
     {
         if const { Stack::<T>::ELEMENT_IS_ZST } {
-            unsafe { self.end_or_len.byte_offset_from_unsigned(self.ptr_or_idx) }
+            self.end_or_len as usize - self.ptr_or_idx as usize
         } else {
             self.fold(0, |count, _| count + 1)
         }
@@ -140,7 +140,7 @@ impl<'a, T> Iterator for Iter<'a, T> {
             let length = self.end_or_len as usize;
             if length - index > n {
                 unsafe {
-                    self.ptr_or_idx = self.ptr_or_idx.byte_add(m);
+                    self.ptr_or_idx = self.ptr_or_idx.wrapping_byte_add(m);
                     Some(self.current_footer.cast().as_ref())
                 }
             } else {
