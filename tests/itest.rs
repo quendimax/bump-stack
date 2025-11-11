@@ -171,4 +171,79 @@ fn stack_iter_zst() {
 
     let count = stk.iter().fold(0, |count, _| count + 1);
     assert_eq!(stk.len(), count);
+
+    let stk = Stack::new();
+    stk.push(());
+    stk.push(());
+    stk.push(());
+    stk.push(());
+
+    let mut iter = stk.iter();
+    assert_eq!((4, Some(4)), iter.size_hint());
+    iter.next();
+    assert_eq!((3, Some(3)), iter.size_hint());
+    iter.next();
+    assert_eq!((2, Some(2)), iter.size_hint());
+    iter.next();
+    assert_eq!((1, Some(1)), iter.size_hint());
+    iter.next();
+    assert_eq!((0, Some(0)), iter.size_hint());
+    iter.next();
+    assert_eq!((0, Some(0)), iter.size_hint());
+}
+
+#[test]
+fn stack_iter_count() {
+    let stk = Stack::new();
+    stk.push(1);
+    stk.push(2);
+    stk.push(4);
+    stk.push(7);
+    assert_eq!(4, stk.iter().count());
+
+    let stk = Stack::new();
+    stk.push(());
+    stk.push(());
+    stk.push(());
+    stk.push(());
+    assert_eq!(4, stk.iter().count());
+}
+
+#[test]
+#[allow(clippy::iter_nth_zero)]
+fn stack_iter_nth() {
+    let stk = Stack::new();
+    stk.push(());
+    stk.push(());
+    stk.push(());
+    stk.push(());
+    let mut iter = stk.iter();
+    assert_eq!(iter.nth(1), Some(&()));
+    assert_eq!(iter.nth(1), Some(&()));
+    assert_eq!(iter.nth(0), None);
+
+    let stk = Stack::new();
+    stk.push(0);
+    let capacity = stk.capacity();
+    for i in 1..capacity {
+        stk.push(i);
+    }
+
+    let mut iter = stk.iter();
+    assert_eq!(iter.nth(1), Some(&1));
+    assert_eq!(iter.nth(1), Some(&3));
+    assert_eq!(iter.nth(capacity), None);
+
+    let mut iter = stk.iter();
+    assert_eq!(iter.nth(capacity), None);
+
+    stk.push(capacity);
+
+    let mut iter = stk.iter();
+    assert_eq!(iter.nth(1), Some(&1));
+    assert_eq!(iter.nth(1), Some(&3));
+    assert_eq!(iter.nth(capacity), None);
+
+    let mut iter = stk.iter();
+    assert_eq!(iter.nth(capacity), None);
 }
