@@ -212,6 +212,7 @@ fn stack_iter_count() {
 #[test]
 #[allow(clippy::iter_nth_zero)]
 fn stack_iter_nth() {
+    // ZST
     let stk = Stack::new();
     stk.push(());
     stk.push(());
@@ -222,28 +223,45 @@ fn stack_iter_nth() {
     assert_eq!(iter.nth(1), Some(&()));
     assert_eq!(iter.nth(0), None);
 
-    let stk = Stack::new();
+    // non-ZST
+    let mut stk = Stack::new();
     stk.push(0);
     let capacity = stk.capacity();
     for i in 1..capacity {
         stk.push(i);
     }
 
+    {
+        let mut iter = stk.iter();
+        assert_eq!(iter.nth(1), Some(&1));
+        assert_eq!(iter.nth(1), Some(&3));
+        assert_eq!(iter.nth(capacity), None);
+
+        let mut iter = stk.iter();
+        assert_eq!(iter.nth(capacity - 1), Some(&(capacity - 1)));
+
+        let mut iter = stk.iter();
+        assert_eq!(iter.nth(capacity), None);
+
+        stk.push(capacity);
+        assert_ne!(stk.capacity(), capacity);
+
+        let mut iter = stk.iter();
+        assert_eq!(iter.nth(1), Some(&1));
+        assert_eq!(iter.nth(1), Some(&3));
+        assert_eq!(iter.nth(capacity), None);
+
+        let mut iter = stk.iter();
+        assert_eq!(iter.nth(capacity), Some(&capacity));
+        assert_eq!(iter.nth(0), None);
+    }
+
+    stk.pop();
+    assert_eq!(stk.len(), capacity);
+    assert_ne!(stk.capacity(), capacity);
+
     let mut iter = stk.iter();
     assert_eq!(iter.nth(1), Some(&1));
     assert_eq!(iter.nth(1), Some(&3));
-    assert_eq!(iter.nth(capacity), None);
-
-    let mut iter = stk.iter();
-    assert_eq!(iter.nth(capacity), None);
-
-    stk.push(capacity);
-
-    let mut iter = stk.iter();
-    assert_eq!(iter.nth(1), Some(&1));
-    assert_eq!(iter.nth(1), Some(&3));
-    assert_eq!(iter.nth(capacity), None);
-
-    let mut iter = stk.iter();
-    assert_eq!(iter.nth(capacity), None);
+    assert_eq!(iter.nth(capacity - 4), None);
 }

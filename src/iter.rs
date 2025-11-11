@@ -167,7 +167,8 @@ impl<'a, T> Iterator for Iter<'a, T> {
                         break None;
                     }
                 } else {
-                    let size = current_end as usize - current_start as usize;
+                    debug_assert!(current_start <= ptr && ptr <= current_end);
+                    let size = current_end as usize - ptr as usize;
                     if need <= size {
                         let new_ptr = ptr.wrapping_byte_add(need);
                         let ptr = ptr.wrapping_byte_add(need - Stack::<T>::ELEMENT_SIZE);
