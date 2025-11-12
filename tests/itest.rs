@@ -1,4 +1,5 @@
 use bump_stack::Stack;
+use pretty_assertions::{assert_eq, assert_ne};
 
 #[test]
 fn stack_ctor() {
@@ -22,11 +23,23 @@ fn stack_ctor() {
     assert_eq!(s.capacity(), usize::MAX);
     assert_eq!(s.len(), 0);
 
+    let s = Stack::from([1, 2, 4]);
+    assert!(s.capacity() >= 3);
+    assert_eq!(s.len(), 3);
+
     let s = Stack::from(&[1, 2, 4]);
     assert!(s.capacity() >= 3);
     assert_eq!(s.len(), 3);
 
+    let s = Stack::from(&mut [1, 2, 4]);
+    assert!(s.capacity() >= 3);
+    assert_eq!(s.len(), 3);
+
     let s = Stack::from([1, 2, 4].as_slice());
+    assert!(s.capacity() >= 3);
+    assert_eq!(s.len(), 3);
+
+    let s = Stack::from([1, 2, 4].as_mut_slice());
     assert!(s.capacity() >= 3);
     assert_eq!(s.len(), 3);
 }
@@ -272,4 +285,32 @@ fn stack_iter_nth() {
     assert_eq!(iter.nth(1), Some(&1));
     assert_eq!(iter.nth(1), Some(&3));
     assert_eq!(iter.nth(capacity - 4), None);
+}
+
+#[test]
+fn stack_partial_eq() {
+    let stk = Stack::from(&[1, 2, 3]);
+    assert_eq!(stk, [1, 2, 3]);
+    assert_eq!(stk, &[1, 2, 3]);
+    assert_eq!(stk, &mut [1, 2, 3]);
+    assert_eq!([1, 2, 3], stk);
+    assert_eq!(&[1, 2, 3], stk);
+    assert_eq!(&mut [1, 2, 3], stk);
+
+    assert_eq!(stk, [1, 2, 3].as_slice());
+    assert_eq!(stk, [1, 2, 3].as_mut_slice());
+
+    assert_ne!(stk, [1, 2, 5]);
+    assert_ne!(stk, &[1, 2, 5]);
+    assert_ne!(stk, &mut [1, 2, 5]);
+    assert_ne!([1, 2, 5], stk);
+    assert_ne!(&[1, 2, 5], stk);
+    assert_ne!(&mut [1, 2, 5], stk);
+
+    assert_ne!(stk, [1, 2, 3, 4]);
+    assert_ne!(stk, &[1, 2, 3, 4]);
+    assert_ne!(stk, &mut [1, 2, 3, 4]);
+    assert_ne!([1, 2, 3, 4], stk);
+    assert_ne!(&[1, 2, 3, 4], stk);
+    assert_ne!(&mut [1, 2, 3, 4], stk);
 }

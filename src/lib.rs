@@ -284,7 +284,7 @@ impl<T> Stack<T> {
     /// # use bump_stack::Stack;
     /// let mut stk = Stack::<i32>::new();
     /// stk.push(3);
-    /// //TODO: assert_eq!(stk, [1, 2, 3]);
+    /// assert_eq!(stk, [3]);
     /// ```
     ///
     /// # Time complexity
@@ -366,10 +366,10 @@ impl<T> Stack<T> {
     ///     stk.push(*elem)
     /// }
     /// assert_eq!(stk.len(), 6);
-    /// // TODO: add per element comparison
+    /// assert_eq!(stk, [1, 2, 4, 1, 2, 4]);
     /// ```
     pub fn iter(&self) -> impl core::iter::Iterator<Item = &T> {
-        iter::Iter::new(self)
+        crate::iter::Iter::new(self)
     }
 }
 
@@ -389,9 +389,36 @@ where
 {
     /// Creates a `Stack<T>` with a chunk big enough to contain N items and
     /// fills it by cloning `slice`'s items.
-    #[inline]
     fn from(slice: &[T; N]) -> Self {
-        core::convert::From::<&[T]>::from(slice.as_slice())
+        let stk = Stack::with_capacity(N);
+        for item in slice {
+            stk.push(item.clone());
+        }
+        stk
+    }
+}
+
+impl<T, const N: usize> core::convert::From<&mut [T; N]> for Stack<T>
+where
+    T: Clone,
+{
+    /// Creates a `Stack<T>` with a chunk big enough to contain N items and
+    /// fills it by cloning `slice`'s items.
+    #[inline]
+    fn from(slice: &mut [T; N]) -> Self {
+        core::convert::From::<&[T; N]>::from(slice)
+    }
+}
+
+impl<T, const N: usize> core::convert::From<[T; N]> for Stack<T>
+where
+    T: Clone,
+{
+    /// Creates a `Stack<T>` with a chunk big enough to contain N items and
+    /// fills it by cloning `array`'s items.
+    #[inline]
+    fn from(array: [T; N]) -> Self {
+        core::convert::From::<&[T; N]>::from(&array)
     }
 }
 
@@ -407,6 +434,17 @@ where
             stk.push(item.clone());
         }
         stk
+    }
+}
+
+impl<T> core::convert::From<&mut [T]> for Stack<T>
+where
+    T: Clone,
+{
+    /// Creates a `Stack<T>` with a chunk big enough to contain N items and
+    /// fills it by cloning `slice`'s items.
+    fn from(slice: &mut [T]) -> Self {
+        core::convert::From::<&[T]>::from(slice)
     }
 }
 
@@ -428,10 +466,95 @@ impl<T> core::ops::Drop for Stack<T> {
 
 impl<'a, T> core::iter::IntoIterator for &'a Stack<T> {
     type Item = &'a T;
-    type IntoIter = iter::Iter<'a, T>;
+    type IntoIter = crate::iter::Iter<'a, T>;
 
     fn into_iter(self) -> Self::IntoIter {
-        iter::Iter::new(self)
+        crate::iter::Iter::new(self)
+    }
+}
+
+impl<T, U> core::cmp::PartialEq<[U]> for Stack<T>
+where
+    T: core::cmp::PartialEq<U>,
+{
+    fn eq(&self, other: &[U]) -> bool {
+        self.len() == other.len() && self.iter().zip(other.iter()).all(|(a, b)| a == b)
+    }
+}
+
+impl<T, U> core::cmp::PartialEq<&[U]> for Stack<T>
+where
+    T: core::cmp::PartialEq<U>,
+{
+    #[inline]
+    fn eq(&self, other: &&[U]) -> bool {
+        core::cmp::PartialEq::<[U]>::eq(self, other)
+    }
+}
+
+impl<T, U> core::cmp::PartialEq<&mut [U]> for Stack<T>
+where
+    T: core::cmp::PartialEq<U>,
+{
+    #[inline]
+    fn eq(&self, other: &&mut [U]) -> bool {
+        core::cmp::PartialEq::<[U]>::eq(self, other)
+    }
+}
+
+impl<T, U, const N: usize> core::cmp::PartialEq<[U; N]> for Stack<T>
+where
+    T: core::cmp::PartialEq<U>,
+{
+    fn eq(&self, other: &[U; N]) -> bool {
+        self.len() == N && self.iter().zip(other.iter()).all(|(a, b)| a == b)
+    }
+}
+
+impl<T, U, const N: usize> core::cmp::PartialEq<&[U; N]> for Stack<T>
+where
+    T: core::cmp::PartialEq<U>,
+{
+    #[inline]
+    fn eq(&self, other: &&[U; N]) -> bool {
+        core::cmp::PartialEq::<[U; N]>::eq(self, other)
+    }
+}
+
+impl<T, U, const N: usize> core::cmp::PartialEq<&mut [U; N]> for Stack<T>
+where
+    T: core::cmp::PartialEq<U>,
+{
+    #[inline]
+    fn eq(&self, other: &&mut [U; N]) -> bool {
+        core::cmp::PartialEq::<[U; N]>::eq(self, other)
+    }
+}
+
+impl<T, U, const N: usize> core::cmp::PartialEq<Stack<U>> for [T; N]
+where
+    T: core::cmp::PartialEq<U>,
+{
+    fn eq(&self, other: &Stack<U>) -> bool {
+        self.len() == other.len() && self.iter().zip(other.iter()).all(|(a, b)| a == b)
+    }
+}
+
+impl<T, U, const N: usize> core::cmp::PartialEq<Stack<U>> for &[T; N]
+where
+    T: core::cmp::PartialEq<U>,
+{
+    fn eq(&self, other: &Stack<U>) -> bool {
+        *self == other
+    }
+}
+
+impl<T, U, const N: usize> core::cmp::PartialEq<Stack<U>> for &mut [T; N]
+where
+    T: core::cmp::PartialEq<U>,
+{
+    fn eq(&self, other: &Stack<U>) -> bool {
+        *self == other
     }
 }
 
