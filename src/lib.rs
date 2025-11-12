@@ -383,6 +383,33 @@ impl<T> core::default::Default for Stack<T> {
     }
 }
 
+impl<T, const N: usize> core::convert::From<&[T; N]> for Stack<T>
+where
+    T: Clone,
+{
+    /// Creates a `Stack<T>` with a chunk big enough to contain N items and
+    /// fills it by cloning `slice`'s items.
+    #[inline]
+    fn from(slice: &[T; N]) -> Self {
+        core::convert::From::<&[T]>::from(slice.as_slice())
+    }
+}
+
+impl<T> core::convert::From<&[T]> for Stack<T>
+where
+    T: Clone,
+{
+    /// Creates a `Stack<T>` with a chunk big enough to contain N items and
+    /// fills it by cloning `slice`'s items.
+    fn from(slice: &[T]) -> Self {
+        let stk = Stack::with_capacity(slice.len());
+        for item in slice {
+            stk.push(item.clone());
+        }
+        stk
+    }
+}
+
 impl<T> core::ops::Drop for Stack<T> {
     fn drop(&mut self) {
         while let Some(item) = self.pop() {
@@ -396,6 +423,15 @@ impl<T> core::ops::Drop for Stack<T> {
                 self.dealloc_chunk(self.current_footer.get());
             }
         }
+    }
+}
+
+impl<'a, T> core::iter::IntoIterator for &'a Stack<T> {
+    type Item = &'a T;
+    type IntoIter = iter::Iter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        iter::Iter::new(self)
     }
 }
 

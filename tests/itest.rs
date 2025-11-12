@@ -21,6 +21,14 @@ fn stack_ctor() {
     let s = Stack::<()>::with_capacity(10);
     assert_eq!(s.capacity(), usize::MAX);
     assert_eq!(s.len(), 0);
+
+    let s = Stack::from(&[1, 2, 4]);
+    assert!(s.capacity() >= 3);
+    assert_eq!(s.len(), 3);
+
+    let s = Stack::from([1, 2, 4].as_slice());
+    assert!(s.capacity() >= 3);
+    assert_eq!(s.len(), 3);
 }
 
 #[test]
@@ -154,7 +162,7 @@ fn stack_iter() {
 
     // double the stack
     let len_before = stk.len();
-    for elem in stk.iter() {
+    for elem in &stk {
         stk.push(*elem);
     }
     let len_after = stk.len();
