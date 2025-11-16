@@ -37,7 +37,7 @@ use bump_stack::Stack;
 let stk = Stack::from([1, 2, 4]);
 
 for elem in stk.iter() {
-    stk.push(*elem)
+    stk.push(*elem);
 }
 assert_eq!(stk.len(), 6);
 assert_eq!(stk, [1, 2, 4, 1, 2, 4]);

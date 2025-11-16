@@ -273,7 +273,7 @@ impl<T> Stack<T> {
         }
     }
 
-    /// Appends an element to the stack.
+    /// Appends an element to the stack returning a reference to it.
     ///
     /// # Panics
     ///
@@ -283,8 +283,10 @@ impl<T> Stack<T> {
     ///
     /// ```
     /// # use bump_stack::Stack;
-    /// let mut stk = Stack::<i32>::new();
-    /// stk.push(3);
+    /// let stk = Stack::new();
+    /// let new_element = stk.push(3);
+    ///
+    /// assert_eq!(new_element, &3);
     /// assert_eq!(stk, [3]);
     /// ```
     ///
@@ -298,22 +300,57 @@ impl<T> Stack<T> {
     /// by two and allocate it again until it reaches the minimum capacity. If
     /// it does, it panics.
     #[inline]
-    pub fn push(&self, value: T) {
-        self.push_with(|| value);
+    pub fn push(&self, value: T) -> &T {
+        self.push_with(|| value)
     }
 
+    /// Pre-allocate space for an element in this stack, initializes it using
+    /// the closure, and returns a reference to the new element.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use bump_stack::Stack;
+    /// let stk = Stack::new();
+    /// let new_element = stk.push_with(|| 3);
+    ///
+    /// assert_eq!(new_element, &3);
+    /// assert_eq!(stk, [3]);
+    /// ```
+    ///
+    /// # Time complexity
+    ///
+    /// Takes amortized *O*(1) time. If the stack's current chunk of memory is
+    /// exhausted, it tries to use the cached one if it exists, otherwise it
+    /// tries to allocate a new chunk.
+    ///
+    /// If the new chunk of memory is too big, it tries to divide the capacity
+    /// by two and allocate it again until it reaches the minimum capacity. If
+    /// it does, it panics.
     #[inline(always)]
-    pub fn push_with<F>(&self, f: F)
+    pub fn push_with<F>(&self, f: F) -> &T
     where
         F: FnOnce() -> T,
     {
         unsafe {
             let p = self.alloc_element();
             util::write_with(p.as_ptr(), f);
+            self.length.update(|len| len + 1);
+            p.as_ref()
         }
-        self.length.update(|len| len + 1);
     }
 
+    /// Removes the last element from a vector and returns it, or [`None`] if it
+    /// is empty.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use bump_stack::Stack;
+    /// let mut stk = Stack::from([1, 2, 3]);
+    /// assert_eq!(stk.pop(), Some(3));
+    /// assert_eq!(stk, [1, 2]);
+    /// ```
     #[inline]
     pub fn pop(&mut self) -> Option<T> {
         unsafe {
@@ -360,11 +397,7 @@ impl<T> Stack<T> {
     ///
     /// ```
     /// # use bump_stack::Stack;
-    /// let stk = Stack::new();
-    /// stk.push(1);
-    /// stk.push(2);
-    /// stk.push(4);
-    ///
+    /// let stk = Stack::from([1, 2, 4]);
     /// let mut iterator = stk.iter();
     ///
     /// assert_eq!(iterator.next(), Some(&1));
@@ -380,13 +413,10 @@ impl<T> Stack<T> {
     ///
     /// ```
     /// # use bump_stack::Stack;
-    /// let stk = Stack::new();
-    /// stk.push(1);
-    /// stk.push(2);
-    /// stk.push(4);
+    /// let stk = Stack::from([1, 2, 4]);
     ///
     /// for elem in stk.iter() {
-    ///     stk.push(*elem)
+    ///     stk.push(*elem);
     /// }
     /// assert_eq!(stk.len(), 6);
     /// assert_eq!(stk, [1, 2, 4, 1, 2, 4]);
