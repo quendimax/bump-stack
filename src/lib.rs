@@ -330,6 +330,28 @@ impl<T> Stack<T> {
         }
     }
 
+    /// Clears the stack, removing all elements.
+    ///
+    /// This method leaves the biggest chunk of memory for future allocations.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use bump_stack::Stack;
+    /// let mut stk = Stack::from([1, 2, 3]);
+    ///
+    /// stk.clear();
+    ///
+    /// assert!(stk.is_empty());
+    /// assert!(stk.capacity() > 0);
+    /// ```
+    pub fn clear(&mut self) {
+        // TODO: Reimplement the method running `drop_in_place`
+        while let Some(elem) = self.pop() {
+            drop(elem)
+        }
+    }
+
     /// Returns an iterator over the stack.
     ///
     /// The iterator yields all items from start to end.
@@ -451,9 +473,7 @@ where
 
 impl<T> core::ops::Drop for Stack<T> {
     fn drop(&mut self) {
-        while let Some(item) = self.pop() {
-            drop(item);
-        }
+        self.clear();
         unsafe {
             let current_footer = self.current_footer.get().as_ref();
             if !current_footer.is_dead() {
