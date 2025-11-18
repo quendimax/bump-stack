@@ -1,34 +1,71 @@
 # `bump-stack`
 
-`Stack<T>` is a [LIFO] collection that uses bump allocation inside. It is
-considered to implement a subset of [`Vec`]'s API. But it also have some own
-features.
+**`Stack<T>` is a [LIFO] collection that uses bump allocation inside.**
 
 [LIFO]: https://en.wikipedia.org/wiki/Stack_(abstract_data_type)
+
+## Getting Started
+
+[`Stack`] mostly implements a subset of [`Vec`]'s API, but it also have some own
+features.
+
+[`Stack`]: crate::Stack
 [`Vec`]: https://doc.rust-lang.org/std/vec/struct.Vec.html
 
-### Distiguishes from `Vec`
+### Add `bump_stack` dependency to your crate
 
-`Stack<T>` has API that is mostly a subset of API of the standard `Vec<T>`. But
-there are some differences.
+To start using `bump_stack`, add it to your `Cargo.toml`:
 
-- `Stack` can add new elements only by pushing them on its back.
-- `Stack` can remove elements only popping them from its back.
-- `Stack` doesn't have access to its element by indexing. But it has iterators
-  over every element.
+```toml
+[dependencies]
+bump_stack = "*"
+```
 
-### Allocation
+### Populating
 
-`Stack<T>` uses a linked list of chunks of memory that contain its elements of
-the `T` type. If the current memory chunk is full, the stack allocates another
-one (two times bigger than previous) from the global allocator, and keeps
-pushing new elements to this new chunk. So, in contrast to `Vec`, `Stack`
-doesn't move old elements from the small chunk into the bigger one.
+In order to populate a new stack, use different [`From`] trait implementations:
+
+```rust
+use bump_stack::Stack;
+
+let _ = Stack::from([1, 2, 3]);
+```
+
+Also, as expected, [`Stack`] allows to add new elements by pushing them on the
+stack.
+
+```rust
+use bump_stack::Stack;
+
+let stack = Stack::new();
+
+assert_eq!(stack.push(1), &1);
+assert_eq!(stack.push(2), &2);
+assert_eq!(stack.push(3), &3);
+```
+
+Note, that, in contrast to [`Vec`], we push new elements using immutable
+reference (why? read in the [Allocation](#allocation) part). Also `push` returns
+a reference to the just pushed element.
+
+### Removing elements
+
+Remove an element is possible only by calling [`pop`] method.
+
+```rust
+use bump_stack::Stack;
+
+let mut stack = Stack::from([1, 2, 3]);
+
+assert_eq!(stack.pop(), Some(3));
+assert_eq!(stack.pop(), Some(2));
+assert_eq!(stack.pop(), Some(1));
+```
 
 ### Iteration
 
 Pushing new elements by immutable reference allows to do that during iteration.
-To avoid inifinite loop, iteration runs over element that have already existed
+To avoid infinite loop, iteration runs over elements that have already existed
 at the moment of creating the iterator.
 
 ```rust
@@ -42,3 +79,35 @@ for elem in stk.iter() {
 assert_eq!(stk.len(), 6);
 assert_eq!(stk, [1, 2, 4, 1, 2, 4]);
 ```
+
+## Allocation
+
+`Stack<T>` uses a linked list of memory chunks that contain elements of the type
+`T`. If the current memory chunk is full, the stack allocates another one from
+the global allocator (usually two times bigger than the previous chunk), and
+keeps pushing new elements to this new chunk. So, in contrast to `Vec`, `Stack`
+doesn't move old elements from the small chunk into the bigger one. Exactly this
+property allows to push new elements by immutable reference, because adding
+element never causes moving old elements.
+
+When we pop elements from the stack, if the current chunk becomes empty, then
+there are possible two steps:
+
+1. If the chunk is the last chunk in the list, it is not deallocated, but it is
+   kept for future use as a cache.
+
+2. If the chunk is not the last one, and we already have another chunk as a
+   cache, the smallest from both is deallocated, and the biggest is kept as a
+   cache.
+
+## Some notes
+
+This crate was heavily inspired by [`bumpalo`] crate, and originally used it
+code as a start point. So, although most of the code is different now, it still
+can contain some `bumpalo`'s code snippets.
+
+I am not an expert in licensing, but if my choice of license (MPL 2.0 is more
+copyleftish than `bumpalo`'s MIT or Apache 2.0) in some way breaks the spirit of
+the `bumpalo` crate, please let me know.
+
+[`bumpalo`]: https://crates.io/crates/bumpalo
