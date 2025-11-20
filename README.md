@@ -2,6 +2,11 @@
 
 **`Stack<T>` is a [LIFO] collection that uses bump allocation inside.**
 
+[![Crates.io Version](https://img.shields.io/crates/v/bump-stack)](https://crates.io/crates/bump-stack)
+[![docs.rs (with version)](https://img.shields.io/docsrs/bump-stack/latest)](https://docs.rs/bump-stack/latest/bump_stack/)
+[![Crates.io Total Downloads](https://img.shields.io/crates/d/bump-stack)](https://crates.io/crates/bump-stack)
+[![License](https://img.shields.io/badge/License-MPL%202.0-blue.svg)](https://opensource.org/licenses/MPL-2.0)
+
 [LIFO]: https://en.wikipedia.org/wiki/Stack_(abstract_data_type)
 
 ## Getting Started
