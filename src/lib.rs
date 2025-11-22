@@ -115,17 +115,6 @@ impl<T> Stack<T> {
         stack
     }
 
-    /// Returns the total number of elements the stack can hold without new
-    /// allocating.
-    #[inline]
-    pub const fn capacity(&self) -> usize {
-        if const { Self::ELEMENT_SIZE == 0 } {
-            usize::MAX
-        } else {
-            self.capacity.get()
-        }
-    }
-
     /// Returns the total number of elements the stack can hold without
     /// additional allocations.
     ///
@@ -133,7 +122,7 @@ impl<T> Stack<T> {
     ///
     /// ```
     /// # use bump_stack::Stack;
-    /// let mut stk: Stack<i32> = Stack::with_capacity(10);
+    /// let mut stk = Stack::with_capacity(10);
     /// stk.push(42);
     /// assert!(stk.capacity() >= 10);
     /// ```
@@ -146,11 +135,27 @@ impl<T> Stack<T> {
     /// #[derive(Clone)]
     /// struct ZeroSized;
     ///
-    /// fn main() {
-    ///     assert_eq!(std::mem::size_of::<ZeroSized>(), 0);
-    ///     let stk = Stack::<ZeroSized>::with_capacity(0);
-    ///     assert_eq!(stk.capacity(), usize::MAX);
-    /// }
+    /// assert_eq!(std::mem::size_of::<ZeroSized>(), 0);
+    /// let stk = Stack::<ZeroSized>::with_capacity(0);
+    /// assert_eq!(stk.capacity(), usize::MAX);
+    /// ```
+    #[inline]
+    pub const fn capacity(&self) -> usize {
+        if const { Self::ELEMENT_SIZE == 0 } {
+            usize::MAX
+        } else {
+            self.capacity.get()
+        }
+    }
+
+    /// Returns the number of elements in the stack.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use bump_stack::Stack;
+    /// let stk = Stack::from([1, 2, 3]);
+    /// assert_eq!(stk.len(), 3);
     /// ```
     #[inline]
     pub const fn len(&self) -> usize {
