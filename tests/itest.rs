@@ -231,6 +231,15 @@ fn stack_iter_count() {
 }
 
 #[test]
+fn stack_iter_size_hint() {
+    let stk = Stack::from([1, 2, 4, 7]);
+    assert_eq!((0, None), stk.iter().size_hint());
+
+    let stk = Stack::from([(), (), (), ()]);
+    assert_eq!((4, Some(4)), stk.iter().size_hint());
+}
+
+#[test]
 #[allow(clippy::iter_nth_zero)]
 fn stack_iter_nth() {
     // ZST
