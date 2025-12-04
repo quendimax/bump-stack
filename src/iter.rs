@@ -1,12 +1,14 @@
 use crate::{ChunkFooter, Stack};
-use core::iter::Iterator;
+use core::iter::{DoubleEndedIterator, Iterator};
+use core::marker::PhantomData;
 use core::ptr::NonNull;
 
 pub struct Iter<'a, T> {
-    _stack: &'a Stack<T>,
+    /// The chunk's footer where `ptr_or_idx` besides within.
+    start_footer: NonNull<ChunkFooter>,
 
-    /// The chunk's footer where the iterating is running on.
-    current_footer: NonNull<ChunkFooter>,
+    /// The chunk's footer where `end_or_len` besides within.
+    end_footer: NonNull<ChunkFooter>,
 
     /// # For non-ZST elements
     ///
@@ -27,6 +29,8 @@ pub struct Iter<'a, T> {
     ///
     /// The number of elements that the iterator should run over.
     end_or_len: *const T,
+
+    _phantom: PhantomData<&'a [T]>,
 }
 
 impl<'a, T> Iter<'a, T> {
@@ -34,19 +38,21 @@ impl<'a, T> Iter<'a, T> {
         let current_footer = unsafe { stack.current_footer.get().as_ref() };
         if const { Stack::<T>::ELEMENT_IS_ZST } {
             Self {
-                _stack: stack,
-                current_footer: current_footer.get(),
+                start_footer: current_footer.get(),
+                end_footer: current_footer.get(),
                 ptr_or_idx: core::ptr::without_provenance(0),
                 end_or_len: core::ptr::without_provenance(stack.len()),
+                _phantom: PhantomData,
             }
         } else {
             let ptr = unsafe { stack.first_footer.get().as_ref().data.cast().as_ptr() };
             let end = current_footer.ptr.get().cast().as_ptr();
             Self {
-                _stack: stack,
-                current_footer: stack.first_footer.get(),
+                start_footer: stack.first_footer.get(),
+                end_footer: current_footer.get(),
                 ptr_or_idx: ptr,
                 end_or_len: end,
+                _phantom: PhantomData,
             }
         }
     }
@@ -56,8 +62,8 @@ impl<'a, T> Iter<'a, T> {
     #[inline(always)]
     unsafe fn next_element_fast(&mut self) -> Option<NonNull<T>> {
         unsafe {
-            let current_footer = self.current_footer.as_ref();
-            let chunk_ptr = current_footer.ptr.get().cast().as_ptr();
+            let start_footer = self.start_footer.as_ref();
+            let chunk_ptr = start_footer.ptr.get().cast().as_ptr();
 
             if self.ptr_or_idx != chunk_ptr {
                 let ptr = self.ptr_or_idx;
@@ -71,13 +77,40 @@ impl<'a, T> Iter<'a, T> {
 
     unsafe fn next_element_slow(&mut self) -> Option<NonNull<T>> {
         unsafe {
-            let current_footer = self.current_footer.as_ref();
-            self.current_footer = current_footer.next.get();
+            let start_footer = self.start_footer.as_ref();
+            self.start_footer = start_footer.next.get();
 
-            let current_footer = self.current_footer.as_ref();
-            self.ptr_or_idx = current_footer.data.cast().as_ptr();
+            let start_footer = self.start_footer.as_ref();
+            self.ptr_or_idx = start_footer.data.cast().as_ptr();
 
             self.next_element_fast()
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn prev_element_fast(&mut self) -> Option<NonNull<T>> {
+        unsafe {
+            let end_footer = self.end_footer.as_ref();
+            let chunk_start = end_footer.data.cast().as_ptr();
+
+            if self.end_or_len != chunk_start {
+                self.end_or_len = self.end_or_len.byte_sub(Stack::<T>::ELEMENT_SIZE);
+                Some(NonNull::new_unchecked(self.end_or_len as *mut T))
+            } else {
+                None
+            }
+        }
+    }
+
+    unsafe fn prev_element_slow(&mut self) -> Option<NonNull<T>> {
+        unsafe {
+            let end_footer = self.end_footer.as_ref();
+            self.end_footer = end_footer.prev.get();
+
+            let end_footer = self.end_footer.as_ref();
+            self.end_or_len = end_footer.ptr.get().cast().as_ptr();
+
+            self.prev_element_fast()
         }
     }
 }
@@ -91,7 +124,7 @@ impl<'a, T> Iterator for Iter<'a, T> {
             if self.ptr_or_idx < self.end_or_len {
                 unsafe {
                     self.ptr_or_idx = self.ptr_or_idx.wrapping_byte_add(1);
-                    Some(self.current_footer.cast().as_ref())
+                    Some(self.start_footer.cast().as_ref())
                 }
             } else {
                 None
@@ -141,7 +174,7 @@ impl<'a, T> Iterator for Iter<'a, T> {
             if length - index > n {
                 unsafe {
                     self.ptr_or_idx = self.ptr_or_idx.wrapping_byte_add(m);
-                    Some(self.current_footer.cast().as_ref())
+                    Some(self.start_footer.cast().as_ref())
                 }
             } else {
                 self.ptr_or_idx = self.end_or_len;
@@ -149,13 +182,13 @@ impl<'a, T> Iterator for Iter<'a, T> {
             }
         } else {
             loop {
-                let current_footer = unsafe { self.current_footer.as_ref() };
-                let current_start = current_footer.data.as_ptr() as *const T;
-                let current_end = current_footer.ptr.get().as_ptr() as *const T;
+                let start_footer = unsafe { self.start_footer.as_ref() };
+                let chunk_start = start_footer.data.as_ptr() as *const T;
+                let chunk_end = start_footer.ptr.get().as_ptr() as *const T;
                 let ptr = self.ptr_or_idx;
                 let end = self.end_or_len;
 
-                if current_start <= end && end <= current_end {
+                if chunk_start <= end && end <= chunk_end {
                     let size = end as usize - ptr as usize;
                     if need <= size {
                         let new_ptr = ptr.wrapping_byte_add(need);
@@ -167,8 +200,8 @@ impl<'a, T> Iterator for Iter<'a, T> {
                         break None;
                     }
                 } else {
-                    debug_assert!(current_start <= ptr && ptr <= current_end);
-                    let size = current_end as usize - ptr as usize;
+                    debug_assert!(chunk_start <= ptr && ptr <= chunk_end);
+                    let size = chunk_end as usize - ptr as usize;
                     if need <= size {
                         let new_ptr = ptr.wrapping_byte_add(need);
                         let ptr = ptr.wrapping_byte_add(need - Stack::<T>::ELEMENT_SIZE);
@@ -176,10 +209,31 @@ impl<'a, T> Iterator for Iter<'a, T> {
                         break Some(unsafe { &*ptr });
                     } else {
                         need -= size;
-                        self.current_footer = current_footer.next.get();
+                        self.start_footer = start_footer.next.get();
                         self.ptr_or_idx =
-                            unsafe { self.current_footer.as_ref().data.cast().as_ptr() };
+                            unsafe { self.start_footer.as_ref().data.cast().as_ptr() };
                     }
+                }
+            }
+        }
+    }
+}
+
+impl<'a, T> DoubleEndedIterator for Iter<'a, T> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if const { Stack::<T>::ELEMENT_IS_ZST } {
+            // it just increments `ptr_or_idx`
+            self.next()
+        } else {
+            if self.ptr_or_idx == self.end_or_len {
+                return None;
+            }
+            unsafe {
+                if let Some(elem_ptr) = self.prev_element_fast() {
+                    Some(elem_ptr.as_ref())
+                } else {
+                    self.prev_element_slow().map(|ptr| ptr.as_ref())
                 }
             }
         }
