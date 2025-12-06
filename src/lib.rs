@@ -426,7 +426,7 @@ impl<T> Stack<T> {
     /// assert_eq!(stk.len(), 6);
     /// assert_eq!(stk, [1, 2, 4, 1, 2, 4]);
     /// ```
-    pub fn iter(&self) -> impl core::iter::Iterator<Item = &T> {
+    pub fn iter(&self) -> impl core::iter::DoubleEndedIterator<Item = &T> {
         crate::iter::Iter::new(self)
     }
 }

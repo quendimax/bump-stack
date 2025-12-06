@@ -162,6 +162,11 @@ fn stack_iter() {
         assert_eq!(*elem, i);
     }
 
+    let len = stk.len();
+    for (i, elem) in stk.iter().rev().enumerate() {
+        assert_eq!(*elem, len - i - 1);
+    }
+
     stk.push(capacity_1);
     let capacity_12 = stk.capacity();
     for i in capacity_1 + 1..capacity_12 {
@@ -171,6 +176,11 @@ fn stack_iter() {
 
     for (i, elem) in stk.iter().enumerate() {
         assert_eq!(*elem, i);
+    }
+
+    let len = stk.len();
+    for (i, elem) in stk.iter().rev().enumerate() {
+        assert_eq!(*elem, len - i - 1);
     }
 
     // double the stack
@@ -184,32 +194,26 @@ fn stack_iter() {
 
 #[test]
 fn stack_iter_zst() {
-    let stk = Stack::new();
-    stk.push(());
-    stk.push(());
-    stk.push(());
-    stk.push(());
-
+    let stk = Stack::from([(), (), (), ()]);
     let count = stk.iter().fold(0, |count, _| count + 1);
     assert_eq!(stk.len(), count);
 
-    let stk = Stack::new();
-    stk.push(());
-    stk.push(());
-    stk.push(());
-    stk.push(());
+    let stk = Stack::from([(), (), (), ()]);
+    let count = stk.iter().rev().fold(0, |count, _| count + 1);
+    assert_eq!(stk.len(), count);
 
+    let stk = Stack::from([(), (), (), ()]);
     let mut iter = stk.iter();
     assert_eq!((4, Some(4)), iter.size_hint());
-    iter.next();
+    iter.next_back();
     assert_eq!((3, Some(3)), iter.size_hint());
     iter.next();
     assert_eq!((2, Some(2)), iter.size_hint());
-    iter.next();
+    iter.next_back();
     assert_eq!((1, Some(1)), iter.size_hint());
     iter.next();
     assert_eq!((0, Some(0)), iter.size_hint());
-    iter.next();
+    iter.next_back();
     assert_eq!((0, Some(0)), iter.size_hint());
 }
 
