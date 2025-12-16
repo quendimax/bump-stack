@@ -353,7 +353,7 @@ impl<T> Stack<T> {
     /// # use bump_stack::Stack;
     /// let mut stk = Stack::from([1, 2, 3]);
     /// assert_eq!(stk.pop(), Some(3));
-    /// assert_eq!(stk, [1, 2]);
+    /// assert_eq!(stk, [2, 1]);
     /// ```
     #[inline]
     pub fn pop(&mut self) -> Option<T> {
@@ -395,7 +395,8 @@ impl<T> Stack<T> {
 
     /// Returns an iterator over the stack.
     ///
-    /// The iterator yields all items from start to end.
+    /// The iterator yields all items' references in inverted order of their
+    /// insertion, corresponding to the LIFO order.
     ///
     /// # Examples
     ///
@@ -404,9 +405,9 @@ impl<T> Stack<T> {
     /// let stk = Stack::from([1, 2, 4]);
     /// let mut iterator = stk.iter();
     ///
-    /// assert_eq!(iterator.next(), Some(&1));
-    /// assert_eq!(iterator.next(), Some(&2));
     /// assert_eq!(iterator.next(), Some(&4));
+    /// assert_eq!(iterator.next(), Some(&2));
+    /// assert_eq!(iterator.next(), Some(&1));
     /// assert_eq!(iterator.next(), None);
     /// ```
     ///
@@ -423,7 +424,7 @@ impl<T> Stack<T> {
     ///     stk.push(*elem);
     /// }
     /// assert_eq!(stk.len(), 6);
-    /// assert_eq!(stk, [1, 2, 4, 1, 2, 4]);
+    /// assert_eq!(stk, [1, 2, 4, 4, 2, 1]);
     /// ```
     pub fn iter(&self) -> impl core::iter::DoubleEndedIterator<Item = &T> {
         crate::iter::Iter::new(self)

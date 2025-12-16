@@ -82,7 +82,7 @@ for elem in stk.iter() {
     stk.push(*elem);
 }
 assert_eq!(stk.len(), 6);
-assert_eq!(stk, [1, 2, 4, 1, 2, 4]);
+assert_eq!(stk, [1, 2, 4, 4, 2, 1]);
 ```
 
 ## Allocation
