@@ -5,30 +5,30 @@ use core::ptr::NonNull;
 
 pub struct Iter<'a, T> {
     /// The chunk's footer where `ptr_or_idx` besides within.
-    start_footer: NonNull<ChunkFooter>,
+    first_footer: NonNull<ChunkFooter>,
 
     /// The chunk's footer where `end_or_len` besides within.
-    end_footer: NonNull<ChunkFooter>,
+    last_footer: NonNull<ChunkFooter>,
 
     /// # For non-ZST elements
     ///
-    /// The address of the next element that should be returned by this
-    /// iterator.
+    /// The address of element that was pushed first, and should be returned by
+    /// this iterator last.
     ///
     /// # For ZST elements
     ///
     /// The index of the next element that should be returned by this iterator.
-    ptr_or_idx: *const T,
+    first_or_idx: *const T,
 
     /// # For non-ZST elements
     ///
-    /// The address of element after the last one that the iterator should run
-    /// over, i.e.
+    /// The address of element that was pushed last, and should be returned by
+    /// this iterator first.
     ///
     /// # For ZST elements
     ///
     /// The number of elements that the iterator should run over.
-    end_or_len: *const T,
+    last_or_len: *const T,
 
     _phantom: PhantomData<&'a [T]>,
 }
@@ -38,20 +38,20 @@ impl<'a, T> Iter<'a, T> {
         let current_footer = unsafe { stack.current_footer.get().as_ref() };
         if const { Stack::<T>::ELEMENT_IS_ZST } {
             Self {
-                start_footer: current_footer.get(),
-                end_footer: current_footer.get(),
-                ptr_or_idx: core::ptr::without_provenance(0),
-                end_or_len: core::ptr::without_provenance(stack.len()),
+                first_footer: current_footer.get(),
+                last_footer: current_footer.get(),
+                first_or_idx: core::ptr::without_provenance(0),
+                last_or_len: core::ptr::without_provenance(stack.len()),
                 _phantom: PhantomData,
             }
         } else {
-            let ptr = unsafe { stack.first_footer.get().as_ref().data.cast().as_ptr() };
-            let end = current_footer.ptr.get().cast().as_ptr();
+            let first_ptr = unsafe { eval_end_ptr(stack.first_footer.get()) };
+            let last_ptr = current_footer.ptr.get().cast().as_ptr();
             Self {
-                start_footer: stack.first_footer.get(),
-                end_footer: current_footer.get(),
-                ptr_or_idx: ptr,
-                end_or_len: end,
+                first_footer: stack.first_footer.get(),
+                last_footer: current_footer.get(),
+                first_or_idx: first_ptr,
+                last_or_len: last_ptr,
                 _phantom: PhantomData,
             }
         }
@@ -59,15 +59,26 @@ impl<'a, T> Iter<'a, T> {
 }
 
 impl<'a, T> Iter<'a, T> {
+    const ELEMENT_SIZE: usize = Stack::<T>::ELEMENT_SIZE;
+    const ELEMENT_IS_ZST: bool = Stack::<T>::ELEMENT_IS_ZST;
+    const FOOTER_IS_END: bool = Stack::<T>::FOOTER_IS_END;
+
     #[inline(always)]
     unsafe fn next_element_fast(&mut self) -> Option<NonNull<T>> {
         unsafe {
-            let start_footer = self.start_footer.as_ref();
-            let chunk_ptr = start_footer.ptr.get().cast().as_ptr();
+            let ptr = self.last_or_len as usize;
+            let end = self.last_footer.as_ptr() as usize;
+            debug_assert!(ptr <= end);
 
-            if self.ptr_or_idx != chunk_ptr {
-                let ptr = self.ptr_or_idx;
-                self.ptr_or_idx = ptr.byte_add(Stack::<T>::ELEMENT_SIZE);
+            let chunk_is_empty = if const { Self::FOOTER_IS_END } {
+                ptr == end
+            } else {
+                end - ptr < Self::ELEMENT_SIZE
+            };
+
+            if !chunk_is_empty {
+                let ptr = self.last_or_len;
+                self.last_or_len = ptr.wrapping_add(1);
                 Some(NonNull::new_unchecked(ptr as *mut T))
             } else {
                 None
@@ -77,11 +88,15 @@ impl<'a, T> Iter<'a, T> {
 
     unsafe fn next_element_slow(&mut self) -> Option<NonNull<T>> {
         unsafe {
-            let start_footer = self.start_footer.as_ref();
-            self.start_footer = start_footer.next.get();
+            let last_footer = self.last_footer.as_ref();
+            self.last_footer = last_footer.prev.get();
 
-            let start_footer = self.start_footer.as_ref();
-            self.ptr_or_idx = start_footer.data.cast().as_ptr();
+            let new_last_footer = self.last_footer.as_ref();
+            self.last_or_len = new_last_footer.ptr.get().cast().as_ptr();
+
+            if self.first_or_idx == self.last_or_len {
+                return None;
+            }
 
             self.next_element_fast()
         }
@@ -90,12 +105,15 @@ impl<'a, T> Iter<'a, T> {
     #[inline(always)]
     unsafe fn prev_element_fast(&mut self) -> Option<NonNull<T>> {
         unsafe {
-            let end_footer = self.end_footer.as_ref();
-            let chunk_start = end_footer.data.cast().as_ptr();
+            let first_footer = self.first_footer.as_ref();
+            let chunk_start = first_footer.data.cast().as_ptr() as *const T;
+            debug_assert!(chunk_start <= self.first_or_idx);
 
-            if self.end_or_len != chunk_start {
-                self.end_or_len = self.end_or_len.byte_sub(Stack::<T>::ELEMENT_SIZE);
-                Some(NonNull::new_unchecked(self.end_or_len as *mut T))
+            let ptr = self.first_or_idx;
+            if ptr != chunk_start {
+                self.first_or_idx = ptr.wrapping_sub(1);
+                debug_assert!(chunk_start <= self.first_or_idx);
+                Some(NonNull::new_unchecked(self.first_or_idx as *mut T))
             } else {
                 None
             }
@@ -104,11 +122,13 @@ impl<'a, T> Iter<'a, T> {
 
     unsafe fn prev_element_slow(&mut self) -> Option<NonNull<T>> {
         unsafe {
-            let end_footer = self.end_footer.as_ref();
-            self.end_footer = end_footer.prev.get();
+            let first_footer = self.first_footer.as_ref();
+            self.first_footer = first_footer.next.get();
+            self.first_or_idx = eval_end_ptr(self.first_footer);
 
-            let end_footer = self.end_footer.as_ref();
-            self.end_or_len = end_footer.ptr.get().cast().as_ptr();
+            if self.first_or_idx == self.last_or_len {
+                return None;
+            }
 
             self.prev_element_fast()
         }
@@ -120,17 +140,17 @@ impl<'a, T> Iterator for Iter<'a, T> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if const { Stack::<T>::ELEMENT_IS_ZST } {
-            if self.ptr_or_idx < self.end_or_len {
+        if const { Self::ELEMENT_IS_ZST } {
+            if self.first_or_idx < self.last_or_len {
                 unsafe {
-                    self.ptr_or_idx = self.ptr_or_idx.wrapping_byte_add(1);
-                    Some(self.start_footer.cast().as_ref())
+                    self.first_or_idx = self.first_or_idx.wrapping_byte_add(1);
+                    Some(self.first_footer.cast().as_ref())
                 }
             } else {
                 None
             }
         } else {
-            if self.ptr_or_idx == self.end_or_len {
+            if self.first_or_idx == self.last_or_len {
                 return None;
             }
             unsafe {
@@ -145,8 +165,8 @@ impl<'a, T> Iterator for Iter<'a, T> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        if const { Stack::<T>::ELEMENT_IS_ZST } {
-            let remains = self.end_or_len as usize - self.ptr_or_idx as usize;
+        if const { Self::ELEMENT_IS_ZST } {
+            let remains = self.last_or_len as usize - self.first_or_idx as usize;
             (remains, Some(remains))
         } else {
             (0, None)
@@ -158,8 +178,8 @@ impl<'a, T> Iterator for Iter<'a, T> {
     where
         Self: Sized,
     {
-        if const { Stack::<T>::ELEMENT_IS_ZST } {
-            self.end_or_len as usize - self.ptr_or_idx as usize
+        if const { Self::ELEMENT_IS_ZST } {
+            self.last_or_len as usize - self.first_or_idx as usize
         } else {
             self.fold(0, |count, _| count + 1)
         }
@@ -167,51 +187,52 @@ impl<'a, T> Iterator for Iter<'a, T> {
 
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
         let m = n + 1;
-        let mut need = m * Stack::<T>::ELEMENT_SIZE;
-        if const { Stack::<T>::ELEMENT_IS_ZST } {
-            let index = self.ptr_or_idx as usize;
-            let length = self.end_or_len as usize;
+        let mut need = m * Self::ELEMENT_SIZE;
+        if const { Self::ELEMENT_IS_ZST } {
+            let index = self.first_or_idx as usize;
+            let length = self.last_or_len as usize;
             if length - index > n {
                 unsafe {
-                    self.ptr_or_idx = self.ptr_or_idx.wrapping_byte_add(m);
-                    Some(self.start_footer.cast().as_ref())
+                    self.first_or_idx = self.first_or_idx.wrapping_byte_add(m);
+                    Some(self.first_footer.cast().as_ref())
                 }
             } else {
-                self.ptr_or_idx = self.end_or_len;
+                self.first_or_idx = self.last_or_len;
                 None
             }
         } else {
             loop {
-                let start_footer = unsafe { self.start_footer.as_ref() };
-                let chunk_start = start_footer.data.as_ptr() as *const T;
-                let chunk_end = start_footer.ptr.get().as_ptr() as *const T;
-                let ptr = self.ptr_or_idx;
-                let end = self.end_or_len;
+                let last_footer = unsafe { self.last_footer.as_ref() };
+                let first_ptr = self.first_or_idx;
+                let last_ptr = self.last_or_len;
 
-                if chunk_start <= end && end <= chunk_end {
-                    let size = end as usize - ptr as usize;
+                if self.last_footer == self.first_footer {
+                    debug_assert!(last_ptr <= first_ptr);
+                    let size = first_ptr as usize - last_ptr as usize;
                     if need <= size {
-                        let new_ptr = ptr.wrapping_byte_add(need);
-                        let ptr = ptr.wrapping_byte_add(need - Stack::<T>::ELEMENT_SIZE);
-                        self.ptr_or_idx = new_ptr;
+                        let new_ptr = last_ptr.wrapping_byte_add(need);
+                        self.last_or_len = new_ptr;
+                        let ptr = last_ptr.wrapping_byte_add(need - Self::ELEMENT_SIZE);
                         break Some(unsafe { &*ptr });
                     } else {
-                        self.ptr_or_idx = end;
+                        self.last_or_len = first_ptr;
                         break None;
                     }
                 } else {
-                    debug_assert!(chunk_start <= ptr && ptr <= chunk_end);
-                    let size = chunk_end as usize - ptr as usize;
+                    // can ignore the gap between the buffer and the footer,
+                    // because: 0 <= gap < ELEMENT_SIZE
+                    let chunk_end = last_footer as *const ChunkFooter as *const T;
+                    let size = chunk_end as usize - last_ptr as usize;
                     if need <= size {
-                        let new_ptr = ptr.wrapping_byte_add(need);
-                        let ptr = ptr.wrapping_byte_add(need - Stack::<T>::ELEMENT_SIZE);
-                        self.ptr_or_idx = new_ptr;
+                        let new_ptr = last_ptr.wrapping_byte_add(need);
+                        self.last_or_len = new_ptr;
+                        let ptr = last_ptr.wrapping_byte_add(need - Self::ELEMENT_SIZE);
                         break Some(unsafe { &*ptr });
                     } else {
                         need -= size;
-                        self.start_footer = start_footer.next.get();
-                        self.ptr_or_idx =
-                            unsafe { self.start_footer.as_ref().data.cast().as_ptr() };
+                        self.last_footer = last_footer.prev.get();
+                        self.last_or_len =
+                            unsafe { self.last_footer.as_ref().data.cast().as_ptr() };
                     }
                 }
             }
@@ -222,20 +243,37 @@ impl<'a, T> Iterator for Iter<'a, T> {
 impl<'a, T> DoubleEndedIterator for Iter<'a, T> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        if const { Stack::<T>::ELEMENT_IS_ZST } {
+        if const { Self::ELEMENT_IS_ZST } {
             // it just increments `ptr_or_idx`
-            self.next()
-        } else {
-            if self.ptr_or_idx == self.end_or_len {
-                return None;
-            }
-            unsafe {
-                if let Some(elem_ptr) = self.prev_element_fast() {
-                    Some(elem_ptr.as_ref())
-                } else {
-                    self.prev_element_slow().map(|ptr| ptr.as_ref())
-                }
+            return self.next();
+        }
+        if self.first_or_idx == self.last_or_len {
+            return None;
+        }
+        unsafe {
+            if let Some(elem_ptr) = self.prev_element_fast() {
+                Some(elem_ptr.as_ref())
+            } else {
+                self.prev_element_slow().map(|ptr| ptr.as_ref())
             }
         }
     }
+}
+
+unsafe fn eval_end_ptr<T>(footer_ptr: NonNull<ChunkFooter>) -> *const T {
+    if const { Stack::<T>::FOOTER_IS_END } {
+        return footer_ptr.cast().as_ptr() as *const T;
+    }
+
+    let footer = unsafe { footer_ptr.as_ref() };
+    let footer_addr = footer_ptr.as_ptr();
+    let chunk_start = footer.data.as_ptr();
+    let chunk_cap_in_bytes = footer_addr as usize - chunk_start as usize;
+    let chunk_capacity = chunk_cap_in_bytes / size_of::<T>();
+
+    let buffer_size = chunk_capacity * size_of::<T>();
+    let end_ptr = chunk_start.wrapping_byte_add(buffer_size);
+    debug_assert!(end_ptr as usize <= footer_addr as usize);
+
+    end_ptr as *const T
 }

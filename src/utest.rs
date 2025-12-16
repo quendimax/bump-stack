@@ -1,7 +1,6 @@
 use super::*;
 use core::mem::size_of;
 use pretty_assertions::{assert_eq, assert_ne};
-use util::const_assert;
 
 #[test]
 fn stack_without_chunks() {
@@ -22,14 +21,14 @@ fn stack_without_chunks() {
 
 #[test]
 fn stack_one_chunk() {
-    type Stack = super::Stack<usize>;
-    let mut stack = Stack::new();
+    type Stk = super::Stack<usize>;
+    let mut stack = Stk::new();
     assert_eq!(stack.capacity(), 0);
     assert_eq!(stack.len(), 0);
 
     unsafe {
         assert!(stack.current_footer.get().as_ref().is_dead());
-        assert!(stack.current_footer.get().as_ref().is_empty());
+        assert!(Stk::chunk_is_empty(stack.current_footer.get().as_ref()));
         assert!(stack.first_footer.get().as_ref().is_dead());
     }
 
@@ -41,7 +40,7 @@ fn stack_one_chunk() {
     for i in 1..capacity {
         unsafe {
             assert!(!stack.current_footer.get().as_ref().is_dead());
-            assert!(!Stack::chunk_is_full(stack.current_footer.get().as_ref()));
+            assert!(!stack.current_footer.get().as_ref().is_full());
             assert_eq!(stack.first_footer, stack.current_footer);
         }
         stack.push(i);
@@ -53,7 +52,7 @@ fn stack_one_chunk() {
     unsafe {
         let current_footer = stack.current_footer.get().as_ref();
         assert!(!current_footer.is_dead());
-        assert!(Stack::chunk_is_full(current_footer));
+        assert!(current_footer.is_full());
         assert!(current_footer.prev.get().as_ref().is_dead());
         assert!(current_footer.next.get().as_ref().is_dead());
         assert_eq!(stack.first_footer, stack.current_footer);
@@ -155,7 +154,8 @@ fn stack_two_chunks() {
 
 #[test]
 fn stack_three_chunks() {
-    let mut stack = Stack::<Element>::new();
+    type Stk = Stack<Element>;
+    let mut stack = Stk::new();
 
     stack.push(elem(0));
     let capacity_1 = stack.capacity();
@@ -201,7 +201,7 @@ fn stack_three_chunks() {
     unsafe {
         let current_footer = stack.current_footer.get().as_ref();
         assert!(!current_footer.is_dead());
-        assert!(current_footer.is_empty());
+        assert!(Stk::chunk_is_empty(current_footer));
         assert!(!current_footer.prev.get().as_ref().is_dead());
         assert!(current_footer.next.get().as_ref().is_dead());
         assert_eq!(stack.first_footer, current_footer.prev.get().as_ref().prev);
@@ -230,10 +230,10 @@ fn stack_three_chunks() {
     unsafe {
         let current_footer = stack.current_footer.get().as_ref();
         assert!(!current_footer.is_dead());
-        assert!(current_footer.is_empty());
+        assert!(Stk::chunk_is_empty(current_footer));
         assert!(!current_footer.prev.get().as_ref().is_dead());
         assert!(!current_footer.next.get().as_ref().is_dead());
-        assert!(current_footer.next.get().as_ref().is_empty());
+        assert!(Stk::chunk_is_empty(current_footer.next.get().as_ref()));
         assert_eq!(stack.first_footer, current_footer.prev);
     }
 
@@ -249,11 +249,11 @@ fn stack_three_chunks() {
     unsafe {
         let current_footer = stack.current_footer.get().as_ref();
         assert!(!current_footer.is_dead());
-        assert!(current_footer.is_empty());
+        assert!(Stk::chunk_is_empty(current_footer));
         assert!(current_footer.prev.get().as_ref().is_dead());
         let next_footer = current_footer.next.get().as_ref();
         assert!(!next_footer.is_dead());
-        assert!(next_footer.is_empty());
+        assert!(Stk::chunk_is_empty(next_footer));
         assert_eq!(next_footer.prev.get(), stack.current_footer.get());
         assert!(next_footer.next.get().as_ref().is_dead());
         assert_eq!(stack.first_footer, stack.current_footer);
@@ -337,7 +337,7 @@ fn check_alignments() {
     let stk = Stack::<T5Packed>::new();
     stk.push(T5Packed { _m0: 0, _m1: 0 });
 
-    const_assert!(!Stack::<T5Packed>::FOOTER_IS_END);
+    const { assert!(!Stack::<T5Packed>::FOOTER_IS_END) };
     assert_eq!(stk.capacity(), 89);
     unsafe {
         let footer = stk.current_footer.get().as_ref();
@@ -358,7 +358,7 @@ fn check_alignments() {
     let stk = Stack::<T5>::new();
     stk.push(T5 { _m0: 0, _m1: 0 });
 
-    const_assert!(Stack::<T5>::FOOTER_IS_END);
+    const { assert!(Stack::<T5>::FOOTER_IS_END) };
     assert_eq!(stk.capacity(), 28);
     unsafe {
         let footer = stk.current_footer.get().as_ref();
@@ -372,7 +372,7 @@ fn check_alignments() {
     let stk = Stack::<usize>::new();
     stk.push(0);
 
-    const_assert!(Stack::<usize>::FOOTER_IS_END);
+    const { assert!(Stack::<usize>::FOOTER_IS_END) };
     assert_eq!(stk.capacity(), 56);
     unsafe {
         let footer = stk.current_footer.get().as_ref();
@@ -386,7 +386,7 @@ fn check_alignments() {
     let stk = Stack::<u8>::new();
     stk.push(0);
 
-    const_assert!(Stack::<u8>::FOOTER_IS_END);
+    const { assert!(Stack::<u8>::FOOTER_IS_END) };
     assert_eq!(stk.capacity(), 448);
     unsafe {
         let footer = stk.current_footer.get().as_ref();

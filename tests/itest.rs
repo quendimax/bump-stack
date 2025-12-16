@@ -63,6 +63,25 @@ fn stack_push_pop() {
 }
 
 #[test]
+fn stack_push_pop_zst() {
+    let mut stack = Stack::default();
+    const MAX: usize = 1 << 10;
+    for i in 0..MAX {
+        assert_eq!(stack.len(), i);
+        stack.push(());
+    }
+    for i in (0..MAX).rev() {
+        assert_eq!(stack.len(), i + 1);
+        assert_eq!(stack.pop(), Some(()));
+    }
+    assert_eq!(stack.len(), 0);
+    assert!(stack.len() < stack.capacity());
+
+    let stack = Stack::default();
+    stack.push(());
+}
+
+#[test]
 fn stack_first() {
     let mut stack = Stack::default();
     assert_eq!(stack.first(), None);
@@ -76,7 +95,10 @@ fn stack_first() {
     assert_eq!(stack.first(), None);
     stack.pop();
     assert_eq!(stack.first(), None);
+}
 
+#[test]
+fn stack_first_zst() {
     let mut stack = Stack::<()>::default();
     assert_eq!(stack.first(), None);
     stack.push(());
@@ -122,7 +144,10 @@ fn stack_last() {
         stack.pop();
     }
     assert_eq!(stack.last(), None);
+}
 
+#[test]
+fn stack_last_zst() {
     let mut stack = Stack::<()>::default();
     assert_eq!(stack.last(), None);
     stack.push(());
@@ -158,13 +183,13 @@ fn stack_iter() {
     }
     assert_eq!(stk.len(), capacity_1);
 
+    let len = stk.len();
     for (i, elem) in stk.iter().enumerate() {
-        assert_eq!(*elem, i);
+        assert_eq!(*elem, len - i - 1);
     }
 
-    let len = stk.len();
     for (i, elem) in stk.iter().rev().enumerate() {
-        assert_eq!(*elem, len - i - 1);
+        assert_eq!(*elem, i);
     }
 
     stk.push(capacity_1);
@@ -174,13 +199,13 @@ fn stack_iter() {
     }
     assert_eq!(stk.len(), capacity_12);
 
+    let len = stk.len();
     for (i, elem) in stk.iter().enumerate() {
-        assert_eq!(*elem, i);
+        assert_eq!(*elem, len - i - 1);
     }
 
-    let len = stk.len();
     for (i, elem) in stk.iter().rev().enumerate() {
-        assert_eq!(*elem, len - i - 1);
+        assert_eq!(*elem, i);
     }
 
     // double the stack
@@ -190,6 +215,15 @@ fn stack_iter() {
     }
     let len_after = stk.len();
     assert_eq!(2 * len_before, len_after);
+
+    let mut iter = stk.iter();
+    while let Some(l_elem) = iter.next()
+        && let Some(r_elem) = iter.next_back()
+    {
+        assert_eq!(l_elem, r_elem);
+    }
+    assert_eq!(iter.next(), None);
+    assert_eq!(iter.next_back(), None);
 }
 
 #[test]
@@ -245,8 +279,7 @@ fn stack_iter_size_hint() {
 
 #[test]
 #[allow(clippy::iter_nth_zero)]
-fn stack_iter_nth() {
-    // ZST
+fn stack_iter_nth_zst() {
     let stk = Stack::new();
     stk.push(());
     stk.push(());
@@ -256,8 +289,11 @@ fn stack_iter_nth() {
     assert_eq!(iter.nth(1), Some(&()));
     assert_eq!(iter.nth(1), Some(&()));
     assert_eq!(iter.nth(0), None);
+}
 
-    // non-ZST
+#[test]
+#[allow(clippy::iter_nth_zero)]
+fn stack_iter_nth() {
     let mut stk = Stack::new();
     stk.push(0);
     let capacity = stk.capacity();
@@ -267,27 +303,31 @@ fn stack_iter_nth() {
 
     {
         let mut iter = stk.iter();
-        assert_eq!(iter.nth(1), Some(&1));
-        assert_eq!(iter.nth(1), Some(&3));
+        assert_eq!(iter.nth(1), Some(&(capacity - 2)));
+        assert_eq!(iter.nth(1), Some(&(capacity - 4)));
         assert_eq!(iter.nth(capacity), None);
 
         let mut iter = stk.iter();
-        assert_eq!(iter.nth(capacity - 1), Some(&(capacity - 1)));
+        assert_eq!(iter.nth(capacity - 1), Some(&0));
 
         let mut iter = stk.iter();
         assert_eq!(iter.nth(capacity), None);
 
         stk.push(capacity);
-        assert_ne!(stk.capacity(), capacity);
+        assert!(stk.capacity() > capacity);
 
         let mut iter = stk.iter();
-        assert_eq!(iter.nth(1), Some(&1));
-        assert_eq!(iter.nth(1), Some(&3));
+        assert_eq!(iter.nth(1), Some(&(capacity - 1)));
+        assert_eq!(iter.nth(1), Some(&(capacity - 3)));
         assert_eq!(iter.nth(capacity), None);
 
         let mut iter = stk.iter();
-        assert_eq!(iter.nth(capacity), Some(&capacity));
+        assert_eq!(iter.nth(capacity), Some(&0));
         assert_eq!(iter.nth(0), None);
+
+        let mut iter = stk.iter();
+        assert_eq!(iter.nth(0), Some(&capacity));
+        assert_eq!(iter.nth(0), Some(&(capacity - 1)));
     }
 
     stk.pop();
@@ -295,14 +335,14 @@ fn stack_iter_nth() {
     assert_ne!(stk.capacity(), capacity);
 
     let mut iter = stk.iter();
-    assert_eq!(iter.nth(1), Some(&1));
-    assert_eq!(iter.nth(1), Some(&3));
+    assert_eq!(iter.nth(1), Some(&(capacity - 2)));
+    assert_eq!(iter.nth(1), Some(&(capacity - 4)));
     assert_eq!(iter.nth(capacity - 4), None);
 }
 
 #[test]
 fn stack_partial_eq() {
-    let stk = Stack::from(&[1, 2, 3]);
+    let stk = Stack::from(&[3, 2, 1]);
     assert_eq!(stk, [1, 2, 3]);
     assert_eq!(stk, &[1, 2, 3]);
     assert_eq!(stk, &mut [1, 2, 3]);

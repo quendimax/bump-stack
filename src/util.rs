@@ -108,22 +108,6 @@ where
     unsafe { inner_writer(ptr, f) };
 }
 
-macro_rules! const_assert {
-    ($expr:expr $(,)?) => {
-        const _: [(); 0 - !{ $expr } as usize] = [];
-    };
-}
-
-pub(crate) use const_assert;
-
-macro_rules! const_assert_eq {
-    ($l_expr:expr, $r_expr:expr $(,)?) => {
-        crate::util::const_assert!(($l_expr) == ($r_expr));
-    };
-}
-
-pub(crate) use const_assert_eq;
-
 #[cfg(test)]
 mod utest {
     use super::*;

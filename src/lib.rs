@@ -12,7 +12,6 @@ use core::marker::PhantomData;
 use core::mem::{align_of, size_of};
 use core::ptr::{self, NonNull};
 
-#[derive(Debug)]
 pub struct Stack<T> {
     /// The current chunk we are bump allocating within.
     ///
@@ -614,6 +613,16 @@ where
     }
 }
 
+impl<T> core::fmt::Debug for Stack<T>
+where
+    T: core::fmt::Debug,
+{
+    #[inline]
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
+    }
+}
+
 /// This footer is always at the end of the chunk. So memory available for
 /// allocation is `self.data..=self`.
 #[derive(Debug)]
@@ -651,12 +660,12 @@ impl ChunkFooter {
         ptr::eq(self, &DEAD_CHUNK.0)
     }
 
-    /// Returns the number of bytes occupied by the chunk.
+    /// Returns the number of bytes occupied by the chunk: `end - ptr`.
     fn occupied(&self) -> usize {
-        let start = self.data.as_ptr() as usize;
         let ptr = self.ptr.get().as_ptr() as usize;
-        debug_assert!(start <= ptr);
-        ptr - start
+        let end = self.get().as_ptr() as usize;
+        debug_assert!(ptr <= end);
+        end - ptr
     }
 
     /// The capacity of the chunk in bytes.
@@ -667,8 +676,8 @@ impl ChunkFooter {
         end - start
     }
 
-    /// Checks if the chunk is empty.
-    fn is_empty(&self) -> bool {
+    /// Checks if the chunk is full.
+    fn is_full(&self) -> bool {
         let start = self.data.as_ptr() as usize;
         let ptr = self.ptr.get().as_ptr() as usize;
         debug_assert!(start <= ptr);
@@ -707,18 +716,16 @@ impl<T> Stack<T> {
     /// Element size
     const ELEMENT_SIZE: usize = size_of::<T>();
 
+    /// Is `true` if `T` is a zero-sized type.
+    const ELEMENT_IS_ZST: bool = Self::ELEMENT_SIZE == 0;
+
     /// Footer alignment is maximum of element alignment and footer alignment
-    /// itself. It allows to use footer's address as the `end` of elements array
-    /// within the chunk.
+    /// itself. It allows to use footer's address as the `end` of the elements
+    /// slice within the chunk.
     const FOOTER_ALIGN: usize = util::max(align_of::<ChunkFooter>(), Self::ELEMENT_ALIGN);
 
+    /// Footer size.
     const FOOTER_SIZE: usize = size_of::<ChunkFooter>();
-
-    /// Chunk alignment is the maximum of element and footer alignments.
-    const CHUNK_ALIGN: usize = util::max(Self::ELEMENT_ALIGN, Self::FOOTER_ALIGN);
-
-    /// Chunk size enough for at least one element.
-    const CHUNK_MIN_SIZE: usize = Self::chunk_size_for(1);
 
     /// Find out if it possible to use footer's address as the `end` of elements
     /// array within the chunk.
@@ -728,6 +735,12 @@ impl<T> Stack<T> {
         Self::FOOTER_ALIGN.is_multiple_of(Self::ELEMENT_SIZE)
             || Self::ELEMENT_SIZE.is_multiple_of(Self::FOOTER_ALIGN)
     };
+
+    /// Chunk alignment is the maximum of element and footer alignments.
+    const CHUNK_ALIGN: usize = util::max(Self::ELEMENT_ALIGN, Self::FOOTER_ALIGN);
+
+    /// Chunk size enough for at least one element.
+    const CHUNK_MIN_SIZE: usize = Self::chunk_size_for(1);
 
     /// Chunk size for the first chunk if capacity is not specified with
     /// [`Stack::with_capacity`].
@@ -752,9 +765,6 @@ impl<T> Stack<T> {
         size - ALLOC_OVERHEAD
     };
 
-    /// Is `true` if `T` is a zero-sized type.
-    const ELEMENT_IS_ZST: bool = Self::ELEMENT_SIZE == 0;
-
     /// Calculate chunk size big enough for the given number of elements. The
     /// chunk is a power of two minus an allocator overhead.
     const fn chunk_size_for(mut elements_count: usize) -> usize {
@@ -774,12 +784,9 @@ impl<T> Stack<T> {
         chunk_size.next_power_of_two() - ALLOC_OVERHEAD
     }
 
-    /// Checks if the chunk has maximum amount of elements.
+    /// Checks if the chunk doesn't have any elements.
     #[inline(always)]
-    fn chunk_is_full(footer: &ChunkFooter) -> bool {
-        if const { Self::ELEMENT_SIZE == 0 } {
-            return false;
-        }
+    fn chunk_is_empty(footer: &ChunkFooter) -> bool {
         let end = footer.get().as_ptr() as usize;
         let ptr = footer.ptr.get().as_ptr() as usize;
         debug_assert!(ptr <= end);
@@ -807,20 +814,18 @@ impl<T> Stack<T> {
     fn alloc_element_fast(&self) -> Option<NonNull<T>> {
         let current_footer = unsafe { self.current_footer.get().as_ref() };
 
-        if Self::chunk_is_full(current_footer) {
+        if current_footer.is_full() && const { !Self::ELEMENT_IS_ZST } {
             return None;
         }
 
         let ptr = current_footer.ptr.get().as_ptr();
-        let new_ptr = ptr.wrapping_byte_add(Self::ELEMENT_SIZE);
-
-        debug_assert!(util::ptr_is_aligned_to(new_ptr, Self::ELEMENT_ALIGN));
-
-        let new_ptr = unsafe { NonNull::new_unchecked(new_ptr) };
+        let new_ptr = unsafe {
+            let ptr = ptr.wrapping_byte_sub(Self::ELEMENT_SIZE);
+            NonNull::new_unchecked(ptr)
+        };
         current_footer.ptr.set(new_ptr);
 
-        let ptr = unsafe { NonNull::new_unchecked(ptr) };
-        Some(ptr.cast())
+        Some(new_ptr.cast())
     }
 
     // Should be run only if the current chunk is full
@@ -828,7 +833,7 @@ impl<T> Stack<T> {
         unsafe {
             let current_footer = self.current_footer.get().as_ref();
 
-            debug_assert!(Self::chunk_is_full(current_footer));
+            debug_assert!(current_footer.is_full());
 
             if current_footer.is_dead() {
                 // this is initial state without allocated chunks at all
@@ -866,7 +871,7 @@ impl<T> Stack<T> {
                     self.current_footer.set(new_footer_ptr);
                 } else {
                     // there is a next empty chunk, so make it the current chunk
-                    debug_assert!(next_footer.is_empty());
+                    debug_assert!(Self::chunk_is_empty(next_footer));
                     self.current_footer.set(next_footer_ptr);
                 }
             }
@@ -875,73 +880,84 @@ impl<T> Stack<T> {
         }
     }
 
+    /// Creates a new chunk with the given size. If it can't allocate a chunk
+    /// with the given size, it tries to allocate a chunk with a two times
+    /// smaller size. Otherwise, it panics.
+    ///
+    /// Properties `data`, `ptr`, and `layout` are initialized to the values
+    /// of the newly allocated chunk.
+    ///
+    /// Properties `prev` and `next` point to the `DEAD_CHUNK`, so you should
+    /// reinitialize them to needed values, if there exist another chunks in the
+    /// list.
     unsafe fn alloc_chunk(&self, chunk_size: usize) -> NonNull<ChunkFooter> {
         debug_assert!(chunk_size <= Self::CHUNK_MAX_SIZE);
 
-        let mut new_chunk_size = chunk_size;
-        let new_chunk_align = Self::CHUNK_ALIGN;
+        let mut chunk_size = chunk_size;
+        let chunk_align = Self::CHUNK_ALIGN;
 
-        let (new_chunk_ptr, new_chunk_layout) = loop {
+        let (chunk_ptr, chunk_layout) = loop {
             // checks for `Layout::from_size_align_unchecked`
-            debug_assert!(new_chunk_align != 0);
-            debug_assert!(new_chunk_align.is_power_of_two());
-            debug_assert!((new_chunk_size + ALLOC_OVERHEAD).is_power_of_two());
-            debug_assert!(new_chunk_size <= isize::MAX as usize);
+            debug_assert!(chunk_align != 0);
+            debug_assert!(chunk_align.is_power_of_two());
+            debug_assert!((chunk_size + ALLOC_OVERHEAD).is_power_of_two());
+            debug_assert!(chunk_size <= isize::MAX as usize);
 
-            let new_chunk_layout =
-                unsafe { Layout::from_size_align_unchecked(new_chunk_size, new_chunk_align) };
+            let chunk_layout =
+                unsafe { Layout::from_size_align_unchecked(chunk_size, chunk_align) };
 
-            let new_chunk_ptr = unsafe { alloc(new_chunk_layout) };
-            if !new_chunk_ptr.is_null() {
-                assert!(util::ptr_is_aligned_to(new_chunk_ptr, Self::CHUNK_ALIGN));
-                break (new_chunk_ptr, new_chunk_layout);
+            let chunk_ptr = unsafe { alloc(chunk_layout) };
+            if !chunk_ptr.is_null() {
+                assert!(util::ptr_is_aligned_to(chunk_ptr, Self::CHUNK_ALIGN));
+                break (chunk_ptr, chunk_layout);
             }
 
             // if couldn't get a new chunk, try to shrink the chunk size by half
-            new_chunk_size = ((new_chunk_size + ALLOC_OVERHEAD) >> 1) - ALLOC_OVERHEAD;
-            if new_chunk_size < Self::CHUNK_MIN_SIZE {
-                handle_alloc_error(new_chunk_layout);
+            chunk_size = ((chunk_size + ALLOC_OVERHEAD) >> 1) - ALLOC_OVERHEAD;
+            if chunk_size < Self::CHUNK_MIN_SIZE {
+                handle_alloc_error(chunk_layout);
             }
         };
 
-        let new_start = new_chunk_ptr;
-        let new_end = new_start.wrapping_byte_add(new_chunk_layout.size());
-        let mut new_footer_start = new_end.wrapping_byte_sub(Self::FOOTER_SIZE);
-        new_footer_start = util::round_mut_ptr_down_to(new_footer_start, Self::FOOTER_ALIGN);
-        let new_ptr = new_start;
+        let chunk_start = chunk_ptr;
+        let chunk_end = chunk_start.wrapping_byte_add(chunk_layout.size());
+        let mut footer_addr = {
+            let addr = chunk_end.wrapping_byte_sub(Self::FOOTER_SIZE);
+            util::round_mut_ptr_down_to(addr, Self::FOOTER_ALIGN)
+        };
 
-        debug_assert!(new_start < new_footer_start);
-        debug_assert!(new_footer_start < new_end);
-        debug_assert!(util::ptr_is_aligned_to(new_ptr, Self::ELEMENT_ALIGN));
+        debug_assert!(chunk_start < footer_addr);
+        debug_assert!(footer_addr < chunk_end);
+        debug_assert!(util::ptr_is_aligned_to(chunk_start, Self::ELEMENT_ALIGN));
 
-        let new_chunk_cap_in_bytes = new_footer_start as usize - new_ptr as usize;
-        let new_chunk_capacity = new_chunk_cap_in_bytes / Self::ELEMENT_SIZE;
-        self.capacity.update(|cap| cap + new_chunk_capacity);
+        let chunk_cap_in_bytes = footer_addr as usize - chunk_start as usize;
+        let chunk_capacity = chunk_cap_in_bytes / Self::ELEMENT_SIZE;
+        self.capacity.update(|cap| cap + chunk_capacity);
+
+        let buffer_size = chunk_capacity * Self::ELEMENT_SIZE;
+        let new_ptr = chunk_start.wrapping_byte_add(buffer_size);
+        debug_assert!(new_ptr <= footer_addr);
 
         if const { Self::ELEMENT_SIZE.is_multiple_of(Self::FOOTER_ALIGN) } {
-            // in this case we additionally align the footer address to be
-            // aligned with elements' array
-            let buffer_size = Self::ELEMENT_SIZE * new_chunk_capacity;
-            let corrected_footer_start = new_start.wrapping_byte_add(buffer_size);
+            // in this case we additionally align the footer address to the end
+            // of the elements slice
+            footer_addr = chunk_start.wrapping_byte_add(buffer_size);
+        }
 
-            let delta = new_footer_start as usize - corrected_footer_start as usize;
-            debug_assert!(delta < Self::ELEMENT_SIZE);
-
-            new_footer_start = corrected_footer_start;
+        if const { Self::FOOTER_IS_END } {
+            debug_assert!(new_ptr == footer_addr);
         }
 
         unsafe {
-            let new_footer_ptr = new_footer_start as *mut ChunkFooter;
-
-            util::write_with(new_footer_ptr, || ChunkFooter {
-                data: NonNull::new_unchecked(new_start),
+            let footer_ptr = footer_addr as *mut ChunkFooter;
+            util::write_with(footer_ptr, || ChunkFooter {
+                data: NonNull::new_unchecked(chunk_start),
                 ptr: Cell::new(NonNull::new_unchecked(new_ptr)),
-                layout: new_chunk_layout,
+                layout: chunk_layout,
                 prev: Cell::new(DEAD_CHUNK.get()),
                 next: Cell::new(DEAD_CHUNK.get()),
             });
-
-            NonNull::new_unchecked(new_footer_ptr)
+            NonNull::new_unchecked(footer_ptr)
         }
     }
 
@@ -958,27 +974,26 @@ impl<T> Stack<T> {
 
     #[inline(always)]
     unsafe fn dealloc_element_fast(&mut self) -> Option<NonNull<T>> {
-        let current_footer_ptr = self.current_footer.get();
-        let current_footer = unsafe { current_footer_ptr.as_ref() };
+        let current_footer = unsafe { self.current_footer.get().as_ref() };
 
-        let start = current_footer.data.as_ptr();
         let ptr = current_footer.ptr.get().as_ptr();
-        debug_assert!(start <= ptr);
-        let capacity = ptr as usize - start as usize;
+        let end = self.current_footer.get().as_ptr().cast();
+        debug_assert!(ptr <= end);
 
+        let capacity = end as usize - ptr as usize;
         if capacity < Self::ELEMENT_SIZE {
             return None;
         }
 
-        let new_ptr = ptr.wrapping_byte_sub(Self::ELEMENT_SIZE);
+        let new_ptr = ptr.wrapping_byte_add(Self::ELEMENT_SIZE);
 
-        debug_assert!(start <= new_ptr);
+        debug_assert!(new_ptr <= end);
         debug_assert!(util::ptr_is_aligned_to(new_ptr, Self::ELEMENT_ALIGN));
 
         let new_ptr = unsafe { NonNull::new_unchecked(new_ptr) };
         current_footer.ptr.set(new_ptr);
 
-        Some(new_ptr.cast())
+        Some(unsafe { NonNull::new_unchecked(ptr.cast()) })
     }
 
     unsafe fn dealloc_element_slow(&mut self) -> Option<NonNull<T>> {
@@ -998,8 +1013,8 @@ impl<T> Stack<T> {
                 return None;
             }
 
-            debug_assert!(current_footer.is_empty());
-            debug_assert!(next_footer.is_empty());
+            debug_assert!(Self::chunk_is_empty(current_footer));
+            debug_assert!(Self::chunk_is_empty(next_footer));
 
             if !next_footer.is_dead() {
                 if current_footer.layout.size() < next_footer.layout.size() {
@@ -1024,7 +1039,7 @@ impl<T> Stack<T> {
                 None
             } else {
                 // check if prev_footer is full
-                debug_assert!(Self::chunk_is_full(prev_footer));
+                debug_assert!(prev_footer.is_full());
 
                 prev_footer.next.set(self.current_footer.get());
                 self.current_footer.set(prev_footer_ptr);
@@ -1045,16 +1060,25 @@ impl<T> Stack<T> {
         }
     }
 
-    /// Returns a pointer to the first element of the stack.
+    /// Returns a pointer to the first pushed element of the stack.
     ///
     /// # Safety
     ///
     /// The caller must ensure that the stack is not empty.
     unsafe fn first_unchecked(&self) -> NonNull<T> {
+        if const { Self::ELEMENT_IS_ZST } {
+            debug_assert!(unsafe { self.first_footer.get().as_ref().is_dead() });
+            return self.first_footer.get().cast();
+        }
         unsafe {
             let first_footer = self.first_footer.get().as_ref();
-            assert!(first_footer.occupied() >= Self::ELEMENT_SIZE);
-            first_footer.data.cast()
+            debug_assert!(first_footer.occupied() >= Self::ELEMENT_SIZE);
+
+            let ptr = first_footer.ptr.get().as_ptr();
+            let end = first_footer as *const ChunkFooter as *const u8;
+            let elems_num = (end as usize - ptr as usize) / Self::ELEMENT_SIZE;
+
+            NonNull::new_unchecked(ptr).cast().add(elems_num - 1)
         }
     }
 
@@ -1064,13 +1088,17 @@ impl<T> Stack<T> {
     ///
     /// The caller must ensure that the stack is not empty.
     unsafe fn last_unchecked(&self) -> NonNull<T> {
+        if const { Self::ELEMENT_IS_ZST } {
+            debug_assert!(unsafe { self.first_footer.get().as_ref().is_dead() });
+            return self.first_footer.get().cast();
+        }
         unsafe {
             let mut footer = self.current_footer.get().as_ref();
-            if footer.is_empty() {
+            if Self::chunk_is_empty(footer) {
                 footer = footer.prev.get().as_ref();
             }
-            assert!(footer.occupied() >= Self::ELEMENT_SIZE);
-            footer.ptr.get().cast().sub(1)
+            debug_assert!(!Self::chunk_is_empty(footer));
+            footer.ptr.get().cast()
         }
     }
 }
@@ -1078,6 +1106,7 @@ impl<T> Stack<T> {
 /// Collection of static tests for inner constants of Stack. They are enabled
 /// only for some platforms, where I could test them. Look inside to see which
 /// ones exactly.
+#[cfg(test)]
 mod stest;
 
 /// Unit tests.
