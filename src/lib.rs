@@ -396,7 +396,7 @@ impl<T> Stack<T> {
     /// Returns an iterator over the stack.
     ///
     /// The iterator yields all items' references in inverted order of their
-    /// insertion, corresponding to the LIFO order.
+    /// insertion, corresponding to a LIFO structure behavior.
     ///
     /// # Examples
     ///

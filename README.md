@@ -1,7 +1,5 @@
 # `bump-stack`
 
-**`Stack<T>` is a [LIFO] collection that uses bump allocation inside.**
-
 [![Crates.io Version](https://img.shields.io/crates/v/bump-stack)](https://crates.io/crates/bump-stack)
 [![docs.rs (with version)](https://img.shields.io/docsrs/bump-stack/latest)](https://docs.rs/bump-stack/latest/bump_stack/)
 [![Crates.io Total Downloads](https://img.shields.io/crates/d/bump-stack)](https://crates.io/crates/bump-stack)
@@ -11,10 +9,12 @@
 
 ## Getting Started
 
-[`Stack`] mostly implements a subset of [`Vec`]'s API, but it also have some own
-features.
+[`Stack<T>`] is a [LIFO] collection that uses bump allocation inside. [`Stack`]
+mostly implements a subset of [`Vec`]'s API, but it also have some own features
+and specific behaviors.
 
 [`Stack`]: crate::Stack
+[`Stack<T>`]: crate::Stack
 [`Vec`]: https://doc.rust-lang.org/std/vec/struct.Vec.html
 
 ### Add `bump_stack` dependency to your crate
@@ -50,8 +50,11 @@ assert_eq!(stack.push(3), &3);
 ```
 
 Note, that, in contrast to [`Vec`], we push new elements using immutable
-reference (why? read in the [Allocation](#allocation) part). Also `push` returns
-a reference to the just pushed element.
+reference (more about that read in the [Allocation](#allocation) part). Also
+[`push`] returns a reference to the just pushed element.
+
+[`From`]: https://doc.rust-lang.org/std/convert/trait.From.html
+[`push`]: crate::Stack::push
 
 ### Removing elements
 
@@ -66,6 +69,8 @@ assert_eq!(stack.pop(), Some(3));
 assert_eq!(stack.pop(), Some(2));
 assert_eq!(stack.pop(), Some(1));
 ```
+
+[`pop`]: crate::Stack::pop
 
 ### Iteration
 
@@ -85,25 +90,36 @@ assert_eq!(stk.len(), 6);
 assert_eq!(stk, [1, 2, 4, 4, 2, 1]);
 ```
 
+Also, note that iteration runs over elements in reverse order of their
+insertion, corresponding to a LIFO structure behavior.
+
 ## Allocation
 
 `Stack<T>` uses a linked list of memory chunks that contain elements of the type
 `T`. If the current memory chunk is full, the stack allocates another one from
 the global allocator (usually two times bigger than the previous chunk), and
 keeps pushing new elements to this new chunk. So, in contrast to `Vec`, `Stack`
-doesn't move old elements from the small chunk into the bigger one. Exactly this
-property allows to push new elements by immutable reference, because adding
-element never causes moving old elements.
+doesn't move old elements from the smaller chunk into the bigger one. Exactly
+this property allows to push new elements by immutable reference, because adding
+element never causes moving old elements, and reference invalidation doesn't
+happen.
+
+As a process's stack memory, our `Stack` grows downwards as well, starting from
+the top of the memory chunk. This is one of the reasons why iterators run over
+elements in reverse order. To get the usual vector-like behavior, you can use
+`Iterator::rev()` method.
 
 When we pop elements from the stack, if the current chunk becomes empty, then
 there are possible two steps:
 
-1. If the chunk is the last chunk in the list, it is not deallocated, but it is
+1. If the chunk is the last chunk in the list, it is not deallocated, but it's
    kept for future use as a cache.
 
 2. If the chunk is not the last one, and we already have another chunk as a
    cache, the smallest from both is deallocated, and the biggest is kept as a
    cache.
+
+[`Iterator::rev()`]: https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.rev
 
 ## Some notes
 
