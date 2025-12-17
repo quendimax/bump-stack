@@ -253,12 +253,11 @@ fn stack_iter_zst() {
 
 #[test]
 fn stack_iter_count() {
-    let stk = Stack::new();
-    stk.push(1);
-    stk.push(2);
-    stk.push(4);
-    stk.push(7);
-    assert_eq!(4, stk.iter().count());
+    let stk = Stack::from([1, 2, 4, 7]);
+    for i in 0..stk.capacity() {
+        stk.push(i);
+    }
+    assert_eq!(stk.len(), stk.iter().count());
 
     let stk = Stack::new();
     stk.push(());

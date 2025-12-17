@@ -91,7 +91,7 @@ assert_eq!(stk, [1, 2, 4, 4, 2, 1]);
 ```
 
 Also, note that iteration runs over elements in reverse order of their
-insertion, corresponding to a LIFO structure behavior.
+insertion, corresponding to LIFO paradigm.
 
 ## Allocation
 

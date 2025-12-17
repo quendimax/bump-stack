@@ -4,10 +4,10 @@ use core::marker::PhantomData;
 use core::ptr::NonNull;
 
 pub struct Iter<'a, T> {
-    /// The chunk's footer where `ptr_or_idx` besides within.
+    /// The chunk's footer where `first_or_idx` besides within.
     first_footer: NonNull<ChunkFooter>,
 
-    /// The chunk's footer where `end_or_len` besides within.
+    /// The chunk's footer where `last_or_len` besides within.
     last_footer: NonNull<ChunkFooter>,
 
     /// # For non-ZST elements
@@ -30,13 +30,17 @@ pub struct Iter<'a, T> {
     /// The number of elements that the iterator should run over.
     last_or_len: *const T,
 
-    _phantom: PhantomData<&'a [T]>,
+    _phantom: PhantomData<&'a T>,
 }
 
 impl<'a, T> Iter<'a, T> {
+    const ELEMENT_SIZE: usize = Stack::<T>::ELEMENT_SIZE;
+    const ELEMENT_IS_ZST: bool = Stack::<T>::ELEMENT_IS_ZST;
+    const FOOTER_IS_END: bool = Stack::<T>::FOOTER_IS_END;
+
     pub(crate) fn new(stack: &'a Stack<T>) -> Self {
         let current_footer = unsafe { stack.current_footer.get().as_ref() };
-        if const { Stack::<T>::ELEMENT_IS_ZST } {
+        if const { Self::ELEMENT_IS_ZST } {
             Self {
                 first_footer: current_footer.get(),
                 last_footer: current_footer.get(),
@@ -59,10 +63,6 @@ impl<'a, T> Iter<'a, T> {
 }
 
 impl<'a, T> Iter<'a, T> {
-    const ELEMENT_SIZE: usize = Stack::<T>::ELEMENT_SIZE;
-    const ELEMENT_IS_ZST: bool = Stack::<T>::ELEMENT_IS_ZST;
-    const FOOTER_IS_END: bool = Stack::<T>::FOOTER_IS_END;
-
     #[inline(always)]
     unsafe fn next_element_fast(&mut self) -> Option<NonNull<T>> {
         unsafe {
@@ -181,7 +181,18 @@ impl<'a, T> Iterator for Iter<'a, T> {
         if const { Self::ELEMENT_IS_ZST } {
             self.last_or_len as usize - self.first_or_idx as usize
         } else {
-            self.fold(0, |count, _| count + 1)
+            let mut count = 0;
+            let buffer_end = self.last_footer.as_ptr() as usize;
+            let ptr = self.last_or_len as usize;
+            count += (buffer_end - ptr) / Self::ELEMENT_SIZE;
+
+            let mut footer = unsafe { self.last_footer.as_ref().prev.get().as_ref() };
+            while !footer.is_dead() {
+                let capacity = footer.capacity();
+                count += capacity / Self::ELEMENT_SIZE;
+                footer = unsafe { footer.prev.get().as_ref() };
+            }
+            count
         }
     }
 
@@ -260,9 +271,9 @@ impl<'a, T> DoubleEndedIterator for Iter<'a, T> {
     }
 }
 
-unsafe fn eval_end_ptr<T>(footer_ptr: NonNull<ChunkFooter>) -> *const T {
+unsafe fn eval_end_ptr<T>(footer_ptr: NonNull<ChunkFooter>) -> *mut T {
     if const { Stack::<T>::FOOTER_IS_END } {
-        return footer_ptr.cast().as_ptr() as *const T;
+        return footer_ptr.cast().as_ptr();
     }
 
     let footer = unsafe { footer_ptr.as_ref() };
@@ -275,5 +286,5 @@ unsafe fn eval_end_ptr<T>(footer_ptr: NonNull<ChunkFooter>) -> *const T {
     let end_ptr = chunk_start.wrapping_byte_add(buffer_size);
     debug_assert!(end_ptr as usize <= footer_addr as usize);
 
-    end_ptr as *const T
+    end_ptr as *mut T
 }
