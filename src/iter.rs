@@ -30,7 +30,7 @@ pub struct Iter<'a, T> {
     /// The number of elements that the iterator should run over.
     last_or_len: *const T,
 
-    _phantom: PhantomData<&'a T>,
+    phantom: PhantomData<&'a T>,
 }
 
 impl<'a, T> Iter<'a, T> {
@@ -46,7 +46,7 @@ impl<'a, T> Iter<'a, T> {
                 last_footer: current_footer.get(),
                 first_or_idx: core::ptr::without_provenance(0),
                 last_or_len: core::ptr::without_provenance(stack.len()),
-                _phantom: PhantomData,
+                phantom: PhantomData,
             }
         } else {
             let first_ptr = unsafe { eval_end_ptr(stack.first_footer.get()) };
@@ -56,7 +56,7 @@ impl<'a, T> Iter<'a, T> {
                 last_footer: current_footer.get(),
                 first_or_idx: first_ptr,
                 last_or_len: last_ptr,
-                _phantom: PhantomData,
+                phantom: PhantomData,
             }
         }
     }

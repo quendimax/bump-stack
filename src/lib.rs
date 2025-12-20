@@ -31,7 +31,7 @@ pub struct Stack<T> {
     /// The number of elements currently in the stack.
     length: Cell<usize>,
 
-    _phantom: PhantomData<T>,
+    phantom: PhantomData<T>,
 }
 
 // Public API
@@ -53,7 +53,7 @@ impl<T> Stack<T> {
             first_footer: Cell::new(DEAD_CHUNK.get()),
             capacity: Cell::new(0),
             length: Cell::new(0),
-            _phantom: PhantomData,
+            phantom: PhantomData,
         }
     }
 
@@ -387,10 +387,31 @@ impl<T> Stack<T> {
     /// assert!(stk.capacity() > 0);
     /// ```
     pub fn clear(&mut self) {
-        // TODO: Reimplement the method running `drop_in_place`
-        while let Some(elem) = self.pop() {
-            drop(elem)
+        let mut footer_ptr = self.first_footer.get();
+        let mut footer = unsafe { footer_ptr.as_ref() };
+        if footer.is_dead() {
+            return;
         }
+        loop {
+            let next_footer_ptr = footer.next.get();
+            let next_footer = unsafe { next_footer_ptr.as_ref() };
+
+            if next_footer.is_dead() {
+                break;
+            }
+
+            unsafe {
+                self.drop_chunk(footer_ptr);
+                self.dealloc_chunk(footer_ptr);
+            }
+
+            footer_ptr = next_footer_ptr;
+            footer = next_footer;
+        }
+        unsafe { self.drop_chunk(footer_ptr) };
+        footer.prev.set(DEAD_CHUNK.get());
+        self.first_footer.set(footer_ptr);
+        self.current_footer.set(footer_ptr);
     }
 
     /// Returns an iterator over the stack.
@@ -507,6 +528,7 @@ where
 }
 
 impl<T> core::ops::Drop for Stack<T> {
+    #[inline]
     fn drop(&mut self) {
         self.clear();
         unsafe {
@@ -806,7 +828,7 @@ impl<T> Stack<T> {
         if let Some(ptr) = self.alloc_element_fast() {
             ptr
         } else {
-            debug_assert!(!Self::ELEMENT_IS_ZST, "slow alloc is impossible for ZST");
+            debug_assert!(!Self::ELEMENT_IS_ZST);
             unsafe { self.alloc_element_slow() }
         }
     }
@@ -1058,6 +1080,24 @@ impl<T> Stack<T> {
             self.capacity.update(|cap| cap - chunk_capacity);
             debug_assert!(self.len() <= self.capacity());
             dealloc(footer.data.as_ptr(), footer.layout);
+        }
+    }
+
+    /// Drops all elements in the chunk pointed to by `footer_ptr`.
+    unsafe fn drop_chunk(&mut self, mut footer_ptr: NonNull<ChunkFooter>) {
+        unsafe {
+            let footer = footer_ptr.as_mut();
+            let ptr = footer.ptr.get().cast::<T>().as_ptr();
+            let end = footer_ptr.as_ptr();
+            let len = (end as usize - ptr as usize) / Self::ELEMENT_SIZE;
+
+            debug_assert!(self.len() >= len);
+            self.length.update(|length| length - len);
+
+            ptr::drop_in_place(ptr::slice_from_raw_parts_mut(ptr, len));
+
+            let new_ptr = NonNull::new_unchecked(ptr.wrapping_add(len));
+            footer.ptr.set(new_ptr.cast());
         }
     }
 

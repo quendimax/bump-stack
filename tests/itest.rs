@@ -23,7 +23,7 @@ fn stack_ctor() {
     assert_eq!(s.capacity(), usize::MAX);
     assert_eq!(s.len(), 0);
 
-    let s = Stack::from([1, 2, 4]);
+    let s = Stack::from([Box::new(1), Box::new(2), Box::new(4)]);
     assert!(s.capacity() >= 3);
     assert_eq!(s.len(), 3);
 
