@@ -5,7 +5,8 @@
 [![Crates.io Total Downloads](https://img.shields.io/crates/d/bump-stack)](https://crates.io/crates/bump-stack)
 [![License](https://img.shields.io/badge/License-MPL%202.0-blue.svg)](https://opensource.org/licenses/MPL-2.0)
 
-[LIFO]: https://en.wikipedia.org/wiki/Stack_(abstract_data_type)
+> [!NOTE]
+> This repo moved to [codeberg.org](https://codeberg.org/quendimax/bump-stack).
 
 ## Getting Started
 
@@ -16,6 +17,7 @@ and specific behaviors.
 [`Stack`]: crate::Stack
 [`Stack<T>`]: crate::Stack
 [`Vec`]: https://doc.rust-lang.org/std/vec/struct.Vec.html
+[LIFO]: https://en.wikipedia.org/wiki/Stack_(abstract_data_type)
 
 ### Add `bump_stack` dependency to your crate
 
